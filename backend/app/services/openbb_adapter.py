@@ -43,6 +43,198 @@ CRYPTO_SYMBOLS = {
     "FIL",
 }
 
+US_STOCK_UNIVERSE_URL = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv"
+CN_STOCK_UNIVERSE_URL = "https://push2.eastmoney.com/api/qt/clist/get"
+
+
+def _parse_sp500_constituents_csv(content: str, limit: int) -> list[dict]:
+    """Parse S&P 500 CSV into normalized stock symbol rows."""
+    try:
+        df = pd.read_csv(StringIO(content))
+    except Exception as exc:
+        logger.warning("Failed parsing US universe CSV: %s", exc)
+        return []
+
+    if df.empty:
+        return []
+
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    if "symbol" not in df.columns:
+        return []
+
+    out: list[dict] = []
+    for row in df.itertuples(index=False):
+        symbol = str(getattr(row, "symbol", "")).upper().strip()
+        if not symbol:
+            continue
+        name = str(getattr(row, "security", "")).strip() or symbol
+        out.append({"symbol": symbol, "name": name, "asset_type": "stock", "market": "US"})
+        if len(out) >= limit:
+            break
+
+    return out
+
+
+def _parse_eastmoney_payload(payload: dict, limit: int) -> list[dict]:
+    """Parse Eastmoney A-share list payload into normalized symbol rows."""
+    diff = payload.get("data", {}).get("diff", [])
+    if not isinstance(diff, list):
+        return []
+
+    out: list[dict] = []
+    for item in diff:
+        code = str(item.get("f12", "")).strip()
+        name = str(item.get("f14", "")).strip() or code
+
+        if not code.isdigit() or len(code) != 6:
+            continue
+
+        # 6* and 5* generally map to Shanghai; others in this universe map to Shenzhen.
+        suffix = ".SH" if code.startswith(("5", "6", "9")) else ".SZ"
+        out.append({"symbol": f"{code}{suffix}", "name": name, "asset_type": "stock", "market": "CN"})
+        if len(out) >= limit:
+            break
+
+    return out
+
+
+def _to_number(value: object) -> float | None:
+    """Normalize Eastmoney numeric fields (string '-' -> None)."""
+    if value in (None, "-", ""):
+        return None
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def _eastmoney_market_fs(market: Literal["us", "cn"]) -> str:
+    """Map market code to Eastmoney fs expression."""
+    if market == "us":
+        return "m:105,m:106,m:107"
+    return "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23"
+
+
+def _fetch_eastmoney_snapshot(market: Literal["us", "cn"], limit: int) -> list[dict]:
+    """Fetch market snapshot rows from Eastmoney."""
+    import requests
+
+    page_size = min(max(limit, 30), 2000)
+    resp = requests.get(
+        CN_STOCK_UNIVERSE_URL,
+        params={
+            "pn": 1,
+            "pz": page_size,
+            "po": 1,
+            "np": 1,
+            "fltt": 2,
+            "invt": 2,
+            "fid": "f3",
+            "fs": _eastmoney_market_fs(market),
+            # f9: PE, f23: PB, f37: ROE, f129: profit yoy
+            "fields": "f12,f14,f9,f23,f37,f129,f20",
+        },
+        timeout=10,
+        headers={"User-Agent": "finance-platform/0.1"},
+    )
+    resp.raise_for_status()
+
+    payload = resp.json()
+    diff = payload.get("data", {}).get("diff", [])
+    if not isinstance(diff, list):
+        return []
+
+    rows: list[dict] = []
+    for item in diff:
+        code = str(item.get("f12", "")).upper().strip()
+        name = str(item.get("f14", "")).strip() or code
+        if not code:
+            continue
+
+        symbol = code
+        if market == "cn":
+            if not code.isdigit() or len(code) != 6:
+                continue
+            suffix = ".SH" if code.startswith(("5", "6", "9")) else ".SZ"
+            symbol = f"{code}{suffix}"
+
+        rows.append(
+            {
+                "symbol": symbol,
+                "name": name,
+                "asset_type": "stock",
+                "market": market.upper(),
+                "pe_ttm": _to_number(item.get("f9")),
+                "pb": _to_number(item.get("f23")),
+                "roe": _to_number(item.get("f37")),
+                "profit_yoy": _to_number(item.get("f129")),
+                "market_cap": _to_number(item.get("f20")),
+            }
+        )
+        if len(rows) >= limit:
+            break
+
+    return rows
+
+
+def fetch_stock_snapshot(market: Literal["us", "cn", "all"] = "us", limit: int = 100) -> list[dict]:
+    """Fetch latest stock snapshot rows by market."""
+    market_norm = market.lower().strip()
+    if market_norm not in {"us", "cn", "all"} or limit <= 0:
+        return []
+
+    rows: list[dict] = []
+    try:
+        if market_norm == "us":
+            rows = _fetch_eastmoney_snapshot("us", limit)
+        elif market_norm == "cn":
+            rows = _fetch_eastmoney_snapshot("cn", limit)
+        else:
+            half = max(1, limit // 2)
+            rows = _fetch_eastmoney_snapshot("us", half) + _fetch_eastmoney_snapshot("cn", limit - half)
+    except Exception as exc:
+        logger.warning("Eastmoney snapshot fetch failed for %s: %s", market_norm, exc)
+        rows = []
+
+    if rows:
+        return rows[:limit]
+
+    # Final fallback for US-only symbol discovery when Eastmoney is unavailable.
+    if market_norm == "us":
+        try:
+            import requests
+
+            resp = requests.get(
+                US_STOCK_UNIVERSE_URL,
+                timeout=10,
+                headers={"User-Agent": "finance-platform/0.1"},
+            )
+            resp.raise_for_status()
+            return _parse_sp500_constituents_csv(resp.text, limit)
+        except Exception as exc:
+            logger.warning("US fallback symbol universe fetch failed: %s", exc)
+
+    if market_norm == "cn":
+        return []
+
+    # all-mode fallback: mix whatever can be fetched.
+    fallback = fetch_stock_snapshot("us", limit)
+    return fallback[:limit]
+
+
+def fetch_stock_symbols(market: Literal["us", "cn", "all"] = "us", limit: int = 100) -> list[dict]:
+    """Fetch latest stock symbols by market."""
+    snapshots = fetch_stock_snapshot(market=market, limit=limit)
+    return [
+        {
+            "symbol": row["symbol"],
+            "name": row.get("name") or row["symbol"],
+            "asset_type": "stock",
+            "market": row.get("market", "US"),
+        }
+        for row in snapshots[:limit]
+    ]
+
 
 def detect_provider(symbol: str) -> tuple[str, str]:
     """Detect asset type and preferred data provider from symbol format.
@@ -340,12 +532,26 @@ def fetch_fundamentals(symbol: str) -> pd.DataFrame:
     try:
         import yfinance as yf
 
-        info = yf.Ticker(normalized).info
+        yf_symbol = normalized
+        source_symbol = symbol.upper().strip()
+        if provider == "akshare":
+            if source_symbol.endswith(".SZ"):
+                yf_symbol = f"{source_symbol.split('.')[0]}.SZ"
+            elif source_symbol.endswith(".SH"):
+                yf_symbol = f"{source_symbol.split('.')[0]}.SS"
+            elif source_symbol.endswith(".HK"):
+                yf_symbol = source_symbol
+            elif source_symbol.isdigit() and len(source_symbol) == 6:
+                yf_symbol = f"{source_symbol}.SS" if source_symbol.startswith(("5", "6", "9")) else f"{source_symbol}.SZ"
+
+        info = yf.Ticker(yf_symbol).info
         row = {
-            "symbol": normalized,
+            "symbol": source_symbol,
+            "name": info.get("shortName") or info.get("longName") or source_symbol,
             "pe_ttm": info.get("trailingPE"),
             "pb": info.get("priceToBook"),
             "roe": info.get("returnOnEquity"),
+            "profit_yoy": info.get("earningsQuarterlyGrowth"),
             "market_cap": info.get("marketCap"),
         }
         return pd.DataFrame([row])
