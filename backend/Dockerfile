@@ -17,11 +17,13 @@ RUN pip install --no-cache-dir \
     pandas==2.2.3 \
     numpy==2.1.3 \
     requests==2.32.3 \
-    yfinance==0.2.50
+    yfinance==0.2.50 \
+    pytest==8.3.4
 
 COPY app /app/app
 COPY backtest /app/backtest
 COPY tasks /app/tasks
+COPY tests /app/tests
 
 ENV PYTHONPATH=/app
 
