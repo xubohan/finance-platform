@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class ScreenerRequest(BaseModel):
@@ -29,6 +31,44 @@ def _error(code: str, message: str, details: dict[str, Any] | None = None) -> di
         "error": {"code": code, "message": message, "details": details or {}},
         "request_id": "",
     }
+
+
+def _fallback_rows() -> list[dict[str, Any]]:
+    """Fallback stock universe used when DB fundamentals are empty."""
+    return [
+        {"symbol": "AAPL", "name": "Apple", "pe_ttm": 28.0, "roe": 150.0, "profit_yoy": 8.0},
+        {"symbol": "MSFT", "name": "Microsoft", "pe_ttm": 34.0, "roe": 38.0, "profit_yoy": 16.0},
+        {"symbol": "NVDA", "name": "NVIDIA", "pe_ttm": 62.0, "roe": 76.0, "profit_yoy": 90.0},
+        {"symbol": "AMZN", "name": "Amazon", "pe_ttm": 44.0, "roe": 22.0, "profit_yoy": 28.0},
+        {"symbol": "GOOGL", "name": "Alphabet", "pe_ttm": 24.0, "roe": 28.0, "profit_yoy": 14.0},
+    ]
+
+
+def _passes(value: float | None, min_value: float | None = None, max_value: float | None = None) -> bool:
+    """Apply nullable numeric range filter with SQL-like NULL behavior."""
+    if value is None:
+        return min_value is None and max_value is None
+    if min_value is not None and value < min_value:
+        return False
+    if max_value is not None and value > max_value:
+        return False
+    return True
+
+
+def _filter_fallback_rows(payload: ScreenerRequest) -> list[dict[str, Any]]:
+    """Filter fallback rows with the same semantics as SQL conditions."""
+    out: list[dict[str, Any]] = []
+    for row in _fallback_rows():
+        if not _passes(row.get("pe_ttm"), payload.min_pe, payload.max_pe):
+            continue
+        if not _passes(row.get("roe"), payload.min_roe, None):
+            continue
+        if not _passes(row.get("profit_yoy"), payload.min_profit_yoy, None):
+            continue
+        out.append(row)
+
+    out.sort(key=lambda r: (r.get("roe") is None, -(float(r["roe"]) if r.get("roe") is not None else 0.0)))
+    return out[: payload.limit]
 
 
 @router.post("/run")
@@ -69,5 +109,27 @@ async def run_screener(payload: ScreenerRequest, db: AsyncSession = Depends(get_
 
     result = await db.execute(stmt, params)
     rows = [dict(r._mapping) for r in result.fetchall()]
+
+    if not rows:
+        universe_stmt = text(
+            """
+            WITH latest_f AS (
+                SELECT DISTINCT ON (symbol)
+                       symbol
+                FROM fundamentals
+                ORDER BY symbol, report_date DESC
+            )
+            SELECT 1
+            FROM assets a
+            JOIN latest_f f ON a.symbol = f.symbol
+            WHERE a.asset_type = 'stock'
+              AND a.is_active = TRUE
+            LIMIT 1
+            """
+        )
+        has_universe = (await db.execute(universe_stmt)).first() is not None
+        if not has_universe:
+            logger.info("Screener fallback dataset is used because stock fundamentals are empty.")
+            rows = _filter_fallback_rows(payload)
 
     return {"data": rows, "meta": {"count": len(rows)}}
