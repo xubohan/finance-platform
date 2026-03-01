@@ -16,10 +16,8 @@ RUN pip install --no-cache-dir \
     redis==5.2.1 \
     pandas==2.2.3 \
     numpy==2.1.3 \
-    httpx==0.28.1 \
     requests==2.32.3 \
-    yfinance==0.2.50 \
-    pytest==8.3.4
+    yfinance==0.2.50
 
 COPY app /app/app
 COPY backtest /app/backtest
