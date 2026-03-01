@@ -31,12 +31,16 @@ services:
       - ./backend:/app
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://finuser:finpass@db:5432/finterminal}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      AI_SERVICE_URL: ${AI_SERVICE_URL:-http://ai_service:8001}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/1}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/2}
     depends_on:
       db:
         condition: service_healthy
       redis:
+        condition: service_started
+      ai_service:
         condition: service_started
     restart: unless-stopped
 
