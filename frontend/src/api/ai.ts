@@ -11,7 +11,7 @@ export async function getAIResult(taskId: string) {
 }
 
 export function subscribeAI(taskId: string, onMessage: (payload: any) => void) {
-  const base = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
+  const base = import.meta.env.VITE_API_BASE_URL || '/api/v1'
   const url = `${base}/ai/stream/${taskId}`
   const es = new EventSource(url)
   es.onmessage = (evt) => {
