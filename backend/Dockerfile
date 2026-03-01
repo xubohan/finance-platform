@@ -6,9 +6,14 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 COPY requirements.txt /app/requirements.txt
-# Step 4 gate only needs ORM importability.
-# Full dependency installation will be enforced in later steps.
-RUN pip install --no-cache-dir SQLAlchemy==2.0.36 asyncpg==0.30.0
+# Install minimal runtime dependencies required up to Step 5 gates.
+RUN pip install --no-cache-dir \
+    SQLAlchemy==2.0.36 \
+    asyncpg==0.30.0 \
+    pandas==2.2.3 \
+    numpy==2.1.3 \
+    requests==2.32.3 \
+    yfinance==0.2.50
 
 COPY app /app/app
 COPY backtest /app/backtest
