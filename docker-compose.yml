@@ -54,5 +54,17 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  ai_service:
+    build: ./ai_service
+    environment:
+      REDIS_URL: redis://redis:6379/3
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      redis:
+        condition: service_started
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+
 volumes:
   pgdata:
