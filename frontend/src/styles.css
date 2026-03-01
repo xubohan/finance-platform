@@ -83,6 +83,38 @@ body {
   color: var(--muted);
 }
 
+.indicator-panel {
+  margin-bottom: 16px;
+}
+
+.indicator-panel h3 {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+.indicator-grid {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.chip {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.chip-active {
+  border-color: transparent;
+  background: linear-gradient(135deg, #0f89c9, #2fb8d8);
+  color: #fff;
+}
+
 @keyframes rise {
   from {
     opacity: 0;
