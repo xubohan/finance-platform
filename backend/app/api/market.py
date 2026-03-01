@@ -15,6 +15,7 @@ from app.services.openbb_adapter import (
     detect_provider,
     fetch_crypto_realtime_price,
     fetch_ohlcv,
+    fetch_stock_snapshot,
 )
 
 router = APIRouter()
@@ -37,6 +38,32 @@ def _to_float(value: Decimal | float | int | None) -> float | None:
     if value is None:
         return None
     return float(value)
+
+
+async def _upsert_ohlcv_rows(
+    db: AsyncSession,
+    symbol: str,
+    asset_type: str,
+    rows: list[dict[str, float | str | Any]],
+) -> None:
+    """Insert/update OHLCV rows idempotently."""
+    if not rows:
+        return
+
+    insert_stmt = text(
+        """
+        INSERT INTO ohlcv_daily(time, symbol, asset_type, open, high, low, close, volume)
+        VALUES (:time, :symbol, :asset_type, :open, :high, :low, :close, :volume)
+        ON CONFLICT (time, symbol, asset_type) DO UPDATE SET
+          open = EXCLUDED.open,
+          high = EXCLUDED.high,
+          low = EXCLUDED.low,
+          close = EXCLUDED.close,
+          volume = EXCLUDED.volume
+        """
+    )
+    await db.execute(insert_stmt, rows)
+    await db.commit()
 
 
 @router.get("/search")
@@ -77,10 +104,6 @@ async def search_assets(
         for row in result.fetchall()
     ]
 
-    # Minimal fallback so search works even before assets table is fully hydrated.
-    if not rows and type in ("all", "crypto") and keyword.upper().startswith("B"):
-        rows.append({"symbol": "BTC", "name": "Bitcoin", "asset_type": "crypto", "market": None})
-
     return {"data": rows, "meta": {"count": len(rows)}}
 
 
@@ -90,6 +113,7 @@ async def get_kline(
     period: str = Query("1d", pattern="^(1d|1W|1M)$"),
     start: str | None = Query(None),
     end: str | None = Query(None),
+    refresh_latest: bool = Query(True),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Get Kline data from DB, fallback to adapter fetch and persist."""
@@ -102,6 +126,24 @@ async def get_kline(
 
     normalized_symbol = symbol.upper()
     asset_type, _ = detect_provider(normalized_symbol)
+
+    if refresh_latest:
+        latest_df = fetch_ohlcv(symbol=normalized_symbol, start_date=start, end_date=end, interval=period)
+        if not latest_df.empty:
+            payload = [
+                {
+                    "time": row.time.to_pydatetime(),
+                    "symbol": normalized_symbol,
+                    "asset_type": asset_type,
+                    "open": float(row.open),
+                    "high": float(row.high),
+                    "low": float(row.low),
+                    "close": float(row.close),
+                    "volume": float(row.volume),
+                }
+                for row in latest_df.itertuples(index=False)
+            ]
+            await _upsert_ohlcv_rows(db, normalized_symbol, asset_type, payload)
 
     query_stmt = text(
         """
@@ -130,19 +172,6 @@ async def get_kline(
         if df.empty:
             raise HTTPException(status_code=404, detail=_error("DATA_NOT_FOUND", "No kline data", {"symbol": normalized_symbol}))
 
-        insert_stmt = text(
-            """
-            INSERT INTO ohlcv_daily(time, symbol, asset_type, open, high, low, close, volume)
-            VALUES (:time, :symbol, :asset_type, :open, :high, :low, :close, :volume)
-            ON CONFLICT (time, symbol, asset_type) DO UPDATE SET
-              open = EXCLUDED.open,
-              high = EXCLUDED.high,
-              low = EXCLUDED.low,
-              close = EXCLUDED.close,
-              volume = EXCLUDED.volume
-            """
-        )
-
         payload = [
             {
                 "time": row.time.to_pydatetime(),
@@ -156,9 +185,7 @@ async def get_kline(
             }
             for row in df.itertuples(index=False)
         ]
-
-        await db.execute(insert_stmt, payload)
-        await db.commit()
+        await _upsert_ohlcv_rows(db, normalized_symbol, asset_type, payload)
 
         result = await db.execute(
             query_stmt,
@@ -208,6 +235,28 @@ async def get_realtime(symbol: str, db: AsyncSession = Depends(get_db)) -> dict[
             }
         }
 
+    latest_df = fetch_ohlcv(
+        symbol=normalized_symbol,
+        start_date=(date.today() - timedelta(days=10)).strftime("%Y-%m-%d"),
+        end_date=date.today().strftime("%Y-%m-%d"),
+        interval="1d",
+    )
+    if not latest_df.empty:
+        payload = [
+            {
+                "time": row.time.to_pydatetime(),
+                "symbol": normalized_symbol,
+                "asset_type": "stock",
+                "open": float(row.open),
+                "high": float(row.high),
+                "low": float(row.low),
+                "close": float(row.close),
+                "volume": float(row.volume),
+            }
+            for row in latest_df.itertuples(index=False)
+        ]
+        await _upsert_ohlcv_rows(db, normalized_symbol, "stock", payload)
+
     stmt = text(
         """
         SELECT close, time
@@ -243,6 +292,20 @@ async def top_movers(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Return top gainers/losers from latest two data points per symbol."""
+    if type == "stock":
+        snapshot = fetch_stock_snapshot(market="all", limit=max(limit * 3, 60))
+        stock_rows = [row for row in snapshot if row.get("change_pct") is not None and row.get("last_price") is not None]
+        stock_rows.sort(key=lambda r: float(r["change_pct"]), reverse=True)
+        data = [
+            {
+                "symbol": str(row["symbol"]).upper(),
+                "change_pct": round(float(row["change_pct"]), 4),
+                "latest": float(row["last_price"]),
+            }
+            for row in stock_rows[:limit]
+        ]
+        return {"data": data, "meta": {"count": len(data), "type": type}}
+
     stmt = text(
         """
         WITH ranked AS (

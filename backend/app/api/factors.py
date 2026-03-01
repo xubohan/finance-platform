@@ -12,7 +12,7 @@ import pandas as pd
 
 from app.database import get_db
 from app.services.factor_engine import score_factors
-from app.services.openbb_adapter import fetch_ohlcv
+from app.services.openbb_adapter import fetch_stock_snapshot
 
 router = APIRouter()
 
@@ -40,37 +40,35 @@ def _error(code: str, message: str, details: dict[str, Any] | None = None) -> di
     }
 
 
-def _fallback_universe() -> pd.DataFrame:
-    """Generate minimal stock universe when DB fundamentals are not ready."""
-    symbols = ["AAPL", "MSFT", "NVDA"]
-    rows: list[dict[str, Any]] = []
+def _snapshot_universe(top_n: int) -> pd.DataFrame:
+    """Build dynamic factor universe from latest market snapshot."""
+    rows = fetch_stock_snapshot(market="all", limit=max(top_n * 4, 80))
+    normalized: list[dict[str, Any]] = []
 
-    base = {
-        "AAPL": {"name": "Apple", "pe_ttm": 28.0, "roe": 150.0, "profit_yoy": 8.0},
-        "MSFT": {"name": "Microsoft", "pe_ttm": 34.0, "roe": 38.0, "profit_yoy": 16.0},
-        "NVDA": {"name": "NVIDIA", "pe_ttm": 62.0, "roe": 76.0, "profit_yoy": 90.0},
-    }
+    for row in rows:
+        pe = row.get("pe_ttm")
+        roe = row.get("roe")
+        growth = row.get("profit_yoy")
+        momentum = row.get("change_pct")
 
-    for sym in symbols:
-        df = fetch_ohlcv(sym, "2024-01-01", "2024-03-01")
-        if df.empty or len(df) < 21:
+        if pe is None or roe is None or growth is None:
             continue
-        latest = float(df.iloc[-1]["close"])
-        prev = float(df.iloc[-21]["close"])
-        momentum_20d = ((latest - prev) / prev) * 100 if prev else 0
+        if momentum is None:
+            momentum = 0
 
-        rows.append(
+        normalized.append(
             {
-                "symbol": sym,
-                "name": base[sym]["name"],
-                "pe_ttm": base[sym]["pe_ttm"],
-                "profit_yoy": base[sym]["profit_yoy"],
-                "momentum_20d": momentum_20d,
-                "roe": base[sym]["roe"],
+                "symbol": str(row.get("symbol", "")).upper(),
+                "name": row.get("name") or str(row.get("symbol", "")).upper(),
+                "pe_ttm": float(pe),
+                "profit_yoy": float(growth),
+                # Snapshot provides current change pct, used as short-term momentum proxy.
+                "momentum_20d": float(momentum),
+                "roe": float(roe),
             }
         )
 
-    return pd.DataFrame(rows)
+    return pd.DataFrame(normalized)
 
 
 @router.post("/score")
@@ -125,12 +123,12 @@ async def factors_score(payload: FactorScoreRequest, db: AsyncSession = Depends(
     df = pd.DataFrame(records)
 
     if df.empty:
-        df = _fallback_universe()
+        df = _snapshot_universe(payload.top_n)
 
     if df.empty:
         raise HTTPException(
             status_code=404,
-            detail=_error("DATA_NOT_FOUND", "No stock universe for factor scoring", {}),
+            detail=_error("DATA_NOT_FOUND", "No live stock universe for factor scoring", {}),
         )
 
     ranked = score_factors(df, weights=weights, top_n=payload.top_n)

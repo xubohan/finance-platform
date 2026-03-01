@@ -131,8 +131,8 @@ def _fetch_eastmoney_snapshot(market: Literal["us", "cn"], limit: int) -> list[d
             "invt": 2,
             "fid": "f3",
             "fs": _eastmoney_market_fs(market),
-            # f9: PE, f23: PB, f37: ROE, f129: profit yoy
-            "fields": "f12,f14,f9,f23,f37,f129,f20",
+            # f2: latest, f3: change_pct, f9: PE, f23: PB, f37: ROE, f129: profit yoy
+            "fields": "f12,f14,f2,f3,f9,f23,f37,f129,f20",
         },
         timeout=10,
         headers={"User-Agent": "finance-platform/0.1"},
@@ -164,6 +164,8 @@ def _fetch_eastmoney_snapshot(market: Literal["us", "cn"], limit: int) -> list[d
                 "name": name,
                 "asset_type": "stock",
                 "market": market.upper(),
+                "last_price": _to_number(item.get("f2")),
+                "change_pct": _to_number(item.get("f3")),
                 "pe_ttm": _to_number(item.get("f9")),
                 "pb": _to_number(item.get("f23")),
                 "roe": _to_number(item.get("f37")),
