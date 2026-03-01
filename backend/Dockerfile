@@ -8,6 +8,8 @@ WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 # Install minimal runtime dependencies required up to Step 5 gates.
 RUN pip install --no-cache-dir \
+    fastapi==0.115.6 \
+    uvicorn==0.32.1 \
     SQLAlchemy==2.0.36 \
     asyncpg==0.30.0 \
     celery==5.4.0 \
