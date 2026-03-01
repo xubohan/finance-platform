@@ -184,6 +184,26 @@ body {
   font-weight: 600;
 }
 
+.metrics-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.metric-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.metric-card small {
+  color: var(--muted);
+}
+
 @keyframes rise {
   from {
     opacity: 0;
