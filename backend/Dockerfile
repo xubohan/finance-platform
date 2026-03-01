@@ -10,6 +10,8 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir \
     SQLAlchemy==2.0.36 \
     asyncpg==0.30.0 \
+    celery==5.4.0 \
+    redis==5.2.1 \
     pandas==2.2.3 \
     numpy==2.1.3 \
     requests==2.32.3 \
