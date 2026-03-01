@@ -1,2 +1,6 @@
 # Local AI planning notes (not committed)
 ai_req/
+
+# Frontend build/install artifacts
+frontend/node_modules/
+frontend/dist/
