@@ -10,7 +10,7 @@ const navItems = [
   { to: '/chart', label: 'Chart' },
   { to: '/screener', label: 'Screener' },
   { to: '/factors', label: 'Factors' },
-  { to: '/backtest', label: 'Backtest' },
+  { to: '/backtest', label: 'Backtest Lab' },
   { to: '/ai', label: 'AI Analysis' },
 ]
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -15,7 +14,8 @@ from app.services.openbb_adapter import (
     detect_provider,
     fetch_crypto_realtime_price,
     fetch_ohlcv,
-    fetch_stock_snapshot,
+    fetch_stock_snapshot_with_meta,
+    fetch_stock_symbols,
 )
 
 router = APIRouter()
@@ -31,13 +31,6 @@ def _error(code: str, message: str, details: dict[str, Any] | None = None) -> di
         },
         "request_id": "",
     }
-
-
-def _to_float(value: Decimal | float | int | None) -> float | None:
-    """Convert DB numeric values to JSON-safe float."""
-    if value is None:
-        return None
-    return float(value)
 
 
 async def _upsert_ohlcv_rows(
@@ -73,38 +66,58 @@ async def search_assets(
     limit: int = Query(10, ge=1, le=20),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Unified search endpoint for stock and crypto assets."""
+    """Unified search endpoint with live stock universe."""
     keyword = q.strip()
-    params: dict[str, Any] = {"kw": f"%{keyword}%", "limit": limit}
+    keyword_upper = keyword.upper()
+    rows: list[dict[str, Any]] = []
 
-    filter_sql = ""
-    if type != "all":
-        filter_sql = " AND asset_type = :asset_type "
-        params["asset_type"] = type
+    if type in ("all", "stock"):
+        live_universe = fetch_stock_symbols(market="all", limit=600)
+        if not live_universe and type == "stock":
+            raise HTTPException(
+                status_code=502,
+                detail=_error("UPSTREAM_UNAVAILABLE", "Failed to fetch latest stock symbol universe", {}),
+            )
+        for item in live_universe:
+            symbol = str(item.get("symbol", "")).upper()
+            name = str(item.get("name", ""))
+            if keyword_upper in symbol or keyword_upper in name.upper():
+                rows.append(
+                    {
+                        "symbol": symbol,
+                        "name": name,
+                        "asset_type": "stock",
+                        "market": item.get("market"),
+                    }
+                )
+                if len(rows) >= limit:
+                    return {"data": rows, "meta": {"count": len(rows)}}
 
-    stmt = text(
-        f"""
-        SELECT symbol, name, asset_type, market
-        FROM assets
-        WHERE (symbol ILIKE :kw OR name ILIKE :kw)
-        {filter_sql}
-        ORDER BY symbol
-        LIMIT :limit
-        """
-    )
-    result = await db.execute(stmt, params)
+    if type in ("all", "crypto") and len(rows) < limit:
+        stmt = text(
+            """
+            SELECT symbol, name, asset_type, market
+            FROM assets
+            WHERE asset_type = 'crypto'
+              AND (symbol ILIKE :kw OR name ILIKE :kw)
+            ORDER BY symbol
+            LIMIT :limit
+            """
+        )
+        result = await db.execute(stmt, {"kw": f"%{keyword}%", "limit": limit - len(rows)})
+        rows.extend(
+            [
+                {
+                    "symbol": row.symbol,
+                    "name": row.name,
+                    "asset_type": row.asset_type,
+                    "market": row.market,
+                }
+                for row in result.fetchall()
+            ]
+        )
 
-    rows = [
-        {
-            "symbol": row.symbol,
-            "name": row.name,
-            "asset_type": row.asset_type,
-            "market": row.market,
-        }
-        for row in result.fetchall()
-    ]
-
-    return {"data": rows, "meta": {"count": len(rows)}}
+    return {"data": rows[:limit], "meta": {"count": len(rows[:limit])}}
 
 
 @router.get("/{symbol}/kline")
@@ -113,101 +126,49 @@ async def get_kline(
     period: str = Query("1d", pattern="^(1d|1W|1M)$"),
     start: str | None = Query(None),
     end: str | None = Query(None),
-    refresh_latest: bool = Query(True),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Get Kline data from DB, fallback to adapter fetch and persist."""
+    """Get latest Kline data from live upstream and persist."""
     if not end:
         end = date.today().strftime("%Y-%m-%d")
     if not start:
         start = (date.today() - timedelta(days=120)).strftime("%Y-%m-%d")
-    start_obj = date.fromisoformat(start)
-    end_obj = date.fromisoformat(end)
 
     normalized_symbol = symbol.upper()
     asset_type, _ = detect_provider(normalized_symbol)
 
-    if refresh_latest:
-        latest_df = fetch_ohlcv(symbol=normalized_symbol, start_date=start, end_date=end, interval=period)
-        if not latest_df.empty:
-            payload = [
-                {
-                    "time": row.time.to_pydatetime(),
-                    "symbol": normalized_symbol,
-                    "asset_type": asset_type,
-                    "open": float(row.open),
-                    "high": float(row.high),
-                    "low": float(row.low),
-                    "close": float(row.close),
-                    "volume": float(row.volume),
-                }
-                for row in latest_df.itertuples(index=False)
-            ]
-            await _upsert_ohlcv_rows(db, normalized_symbol, asset_type, payload)
+    latest_df = fetch_ohlcv(symbol=normalized_symbol, start_date=start, end_date=end, interval=period)
+    if latest_df.empty:
+        raise HTTPException(
+            status_code=502,
+            detail=_error("UPSTREAM_UNAVAILABLE", "Failed to fetch latest kline data", {"symbol": normalized_symbol}),
+        )
 
-    query_stmt = text(
-        """
-        SELECT time, open, high, low, close, volume
-        FROM ohlcv_daily
-        WHERE symbol = :symbol
-          AND asset_type = :asset_type
-          AND time::date >= :start_date
-          AND time::date <= :end_date
-        ORDER BY time
-        """
-    )
-    result = await db.execute(
-        query_stmt,
+    payload = [
         {
+            "time": row.time.to_pydatetime(),
             "symbol": normalized_symbol,
             "asset_type": asset_type,
-            "start_date": start_obj,
-            "end_date": end_obj,
-        },
-    )
-    rows = result.fetchall()
-
-    if not rows:
-        df = fetch_ohlcv(symbol=normalized_symbol, start_date=start, end_date=end, interval=period)
-        if df.empty:
-            raise HTTPException(status_code=404, detail=_error("DATA_NOT_FOUND", "No kline data", {"symbol": normalized_symbol}))
-
-        payload = [
-            {
-                "time": row.time.to_pydatetime(),
-                "symbol": normalized_symbol,
-                "asset_type": asset_type,
-                "open": float(row.open),
-                "high": float(row.high),
-                "low": float(row.low),
-                "close": float(row.close),
-                "volume": float(row.volume),
-            }
-            for row in df.itertuples(index=False)
-        ]
-        await _upsert_ohlcv_rows(db, normalized_symbol, asset_type, payload)
-
-        result = await db.execute(
-            query_stmt,
-            {
-                "symbol": normalized_symbol,
-                "asset_type": asset_type,
-                "start_date": start_obj,
-                "end_date": end_obj,
-            },
-        )
-        rows = result.fetchall()
+            "open": float(row.open),
+            "high": float(row.high),
+            "low": float(row.low),
+            "close": float(row.close),
+            "volume": float(row.volume),
+        }
+        for row in latest_df.itertuples(index=False)
+    ]
+    await _upsert_ohlcv_rows(db, normalized_symbol, asset_type, payload)
 
     data = [
         {
             "time": row.time.isoformat(),
-            "open": _to_float(row.open),
-            "high": _to_float(row.high),
-            "low": _to_float(row.low),
-            "close": _to_float(row.close),
-            "volume": _to_float(row.volume),
+            "open": float(row.open),
+            "high": float(row.high),
+            "low": float(row.low),
+            "close": float(row.close),
+            "volume": float(row.volume),
         }
-        for row in rows
+        for row in latest_df.itertuples(index=False)
     ]
 
     return {"data": data, "meta": {"symbol": normalized_symbol, "period": period}}
@@ -241,39 +202,29 @@ async def get_realtime(symbol: str, db: AsyncSession = Depends(get_db)) -> dict[
         end_date=date.today().strftime("%Y-%m-%d"),
         interval="1d",
     )
-    if not latest_df.empty:
-        payload = [
-            {
-                "time": row.time.to_pydatetime(),
-                "symbol": normalized_symbol,
-                "asset_type": "stock",
-                "open": float(row.open),
-                "high": float(row.high),
-                "low": float(row.low),
-                "close": float(row.close),
-                "volume": float(row.volume),
-            }
-            for row in latest_df.itertuples(index=False)
-        ]
-        await _upsert_ohlcv_rows(db, normalized_symbol, "stock", payload)
+    if latest_df.empty:
+        raise HTTPException(
+            status_code=502,
+            detail=_error("UPSTREAM_UNAVAILABLE", "Failed to fetch latest quote data", {"symbol": normalized_symbol}),
+        )
 
-    stmt = text(
-        """
-        SELECT close, time
-        FROM ohlcv_daily
-        WHERE symbol = :symbol AND asset_type = 'stock'
-        ORDER BY time DESC
-        LIMIT 2
-        """
-    )
-    result = await db.execute(stmt, {"symbol": normalized_symbol})
-    rows = result.fetchall()
+    payload = [
+        {
+            "time": row.time.to_pydatetime(),
+            "symbol": normalized_symbol,
+            "asset_type": "stock",
+            "open": float(row.open),
+            "high": float(row.high),
+            "low": float(row.low),
+            "close": float(row.close),
+            "volume": float(row.volume),
+        }
+        for row in latest_df.itertuples(index=False)
+    ]
+    await _upsert_ohlcv_rows(db, normalized_symbol, "stock", payload)
 
-    if not rows:
-        raise HTTPException(status_code=404, detail=_error("DATA_NOT_FOUND", "No price data", {"symbol": normalized_symbol}))
-
-    latest = _to_float(rows[0].close) or 0
-    prev = _to_float(rows[1].close) if len(rows) > 1 else latest
+    latest = float(latest_df.iloc[-1]["close"])
+    prev = float(latest_df.iloc[-2]["close"]) if len(latest_df) > 1 else latest
     change_pct = ((latest - prev) / prev * 100) if prev else 0
 
     return {
@@ -289,11 +240,22 @@ async def get_realtime(symbol: str, db: AsyncSession = Depends(get_db)) -> dict[
 async def top_movers(
     type: str = Query("stock", pattern="^(stock|crypto)$"),
     limit: int = Query(10, ge=1, le=50),
-    db: AsyncSession = Depends(get_db),
+    force_refresh: bool = Query(False),
+    allow_stale: bool = Query(True),
 ) -> dict[str, Any]:
-    """Return top gainers/losers from latest two data points per symbol."""
+    """Return top movers from live upstream feeds."""
     if type == "stock":
-        snapshot = fetch_stock_snapshot(market="all", limit=max(limit * 3, 60))
+        snapshot, snapshot_meta = fetch_stock_snapshot_with_meta(
+            market="all",
+            limit=max(limit * 3, 60),
+            force_refresh=force_refresh,
+            allow_stale=allow_stale,
+        )
+        if not snapshot:
+            raise HTTPException(
+                status_code=502,
+                detail=_error("UPSTREAM_UNAVAILABLE", "Failed to fetch latest stock movers", {}),
+            )
         stock_rows = [row for row in snapshot if row.get("change_pct") is not None and row.get("last_price") is not None]
         stock_rows.sort(key=lambda r: float(r["change_pct"]), reverse=True)
         data = [
@@ -304,44 +266,45 @@ async def top_movers(
             }
             for row in stock_rows[:limit]
         ]
-        return {"data": data, "meta": {"count": len(data), "type": type}}
+        return {
+            "data": data,
+            "meta": {
+                "count": len(data),
+                "type": type,
+                "source": snapshot_meta.get("source"),
+                "stale": snapshot_meta.get("stale"),
+                "as_of": snapshot_meta.get("as_of"),
+                "cache_age_sec": snapshot_meta.get("cache_age_sec"),
+                "refresh_in_progress": False,
+            },
+        }
 
-    stmt = text(
-        """
-        WITH ranked AS (
-            SELECT symbol, asset_type, close, time,
-                   ROW_NUMBER() OVER (PARTITION BY symbol, asset_type ORDER BY time DESC) AS rn
-            FROM ohlcv_daily
-            WHERE asset_type = :asset_type
-        ), pair AS (
-            SELECT symbol,
-                   MAX(CASE WHEN rn = 1 THEN close END) AS latest,
-                   MAX(CASE WHEN rn = 2 THEN close END) AS prev
-            FROM ranked
-            WHERE rn <= 2
-            GROUP BY symbol
+    tracked = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "AVAX", "DOGE", "DOT"]
+    quotes = fetch_crypto_realtime_price(tracked)
+    if not quotes:
+        raise HTTPException(
+            status_code=502,
+            detail=_error("UPSTREAM_UNAVAILABLE", "Failed to fetch latest crypto movers", {}),
         )
-        SELECT symbol,
-               latest,
-               prev,
-               ((latest - prev) / NULLIF(prev, 0)) * 100 AS change_pct
-        FROM pair
-        WHERE prev IS NOT NULL
-        ORDER BY change_pct DESC
-        LIMIT :limit
-        """
-    )
-
-    result = await db.execute(stmt, {"asset_type": type, "limit": limit})
-    rows = result.fetchall()
-
     data = [
         {
-            "symbol": row.symbol,
-            "change_pct": round(_to_float(row.change_pct) or 0, 4),
-            "latest": _to_float(row.latest),
+            "symbol": symbol,
+            "change_pct": round(float(item.get("change_pct_24h", 0) or 0), 4),
+            "latest": float(item.get("price", 0) or 0),
         }
-        for row in rows
+        for symbol, item in quotes.items()
     ]
+    data.sort(key=lambda r: r["change_pct"], reverse=True)
 
-    return {"data": data, "meta": {"count": len(data), "type": type}}
+    return {
+        "data": data[:limit],
+        "meta": {
+            "count": min(len(data), limit),
+            "type": type,
+            "source": "live",
+            "stale": False,
+            "as_of": None,
+            "cache_age_sec": None,
+            "refresh_in_progress": False,
+        },
+    }

@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 import pandas as pd
 
-from app.database import get_db
 from app.services.factor_engine import score_factors
-from app.services.openbb_adapter import fetch_stock_snapshot
+from app.services.openbb_adapter import fetch_stock_snapshot_with_meta, fetch_stock_universe_total_with_meta
 
 router = APIRouter()
 
@@ -30,7 +27,12 @@ class FactorScoreRequest(BaseModel):
     """Request schema for factor scoring."""
 
     weights: FactorWeights
-    top_n: int = Field(50, ge=1, le=200)
+    market: Literal["us", "cn"] = "us"
+    symbol_limit: int = Field(20000, ge=50, le=20000)
+    page: int = Field(1, ge=1)
+    page_size: int = Field(50, ge=50, le=50)
+    force_refresh: bool = False
+    allow_stale: bool = True
 
 
 def _error(code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -40,9 +42,23 @@ def _error(code: str, message: str, details: dict[str, Any] | None = None) -> di
     }
 
 
-def _snapshot_universe(top_n: int) -> pd.DataFrame:
+def _snapshot_universe(
+    market: Literal["us", "cn"],
+    symbol_limit: int,
+    *,
+    force_refresh: bool,
+    allow_stale: bool,
+) -> tuple[pd.DataFrame, int, dict[str, Any]]:
     """Build dynamic factor universe from latest market snapshot."""
-    rows = fetch_stock_snapshot(market="all", limit=max(top_n * 4, 80))
+    rows, snapshot_meta = fetch_stock_snapshot_with_meta(
+        market=market,
+        limit=symbol_limit,
+        force_refresh=force_refresh,
+        allow_stale=allow_stale,
+    )
+    if not rows:
+        return pd.DataFrame(), 0, snapshot_meta
+
     normalized: list[dict[str, Any]] = []
 
     for row in rows:
@@ -68,11 +84,11 @@ def _snapshot_universe(top_n: int) -> pd.DataFrame:
             }
         )
 
-    return pd.DataFrame(normalized)
+    return pd.DataFrame(normalized), len(rows), snapshot_meta
 
 
 @router.post("/score")
-async def factors_score(payload: FactorScoreRequest, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+async def factors_score(payload: FactorScoreRequest) -> dict[str, Any]:
     """Calculate weighted stock factor ranking."""
     weights = payload.weights.model_dump()
 
@@ -82,55 +98,57 @@ async def factors_score(payload: FactorScoreRequest, db: AsyncSession = Depends(
             detail=_error("INVALID_WEIGHTS", "weights must sum to 100", {"weights": weights}),
         )
 
-    stmt = text(
-        """
-        WITH latest_f AS (
-            SELECT DISTINCT ON (symbol)
-                   symbol, pe_ttm, roe, profit_yoy
-            FROM fundamentals
-            ORDER BY symbol, report_date DESC
-        ),
-        px AS (
-            SELECT symbol, close, time,
-                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY time DESC) AS rn
-            FROM ohlcv_daily
-            WHERE asset_type = 'stock'
-        ),
-        px_pair AS (
-            SELECT symbol,
-                   MAX(CASE WHEN rn = 1 THEN close END) AS latest_close,
-                   MAX(CASE WHEN rn = 21 THEN close END) AS prev_close
-            FROM px
-            WHERE rn IN (1, 21)
-            GROUP BY symbol
-        )
-        SELECT a.symbol,
-               a.name,
-               lf.pe_ttm,
-               lf.profit_yoy,
-               ((pp.latest_close - pp.prev_close) / NULLIF(pp.prev_close, 0)) * 100 AS momentum_20d,
-               lf.roe
-        FROM assets a
-        JOIN latest_f lf ON a.symbol = lf.symbol
-        JOIN px_pair pp ON a.symbol = pp.symbol
-        WHERE a.asset_type = 'stock'
-          AND a.is_active = TRUE
-        """
+    df, snapshot_count, snapshot_meta = _snapshot_universe(
+        payload.market,
+        payload.symbol_limit,
+        force_refresh=payload.force_refresh,
+        allow_stale=payload.allow_stale,
     )
-
-    result = await db.execute(stmt)
-    records = [dict(r._mapping) for r in result.fetchall()]
-    df = pd.DataFrame(records)
-
-    if df.empty:
-        df = _snapshot_universe(payload.top_n)
+    if snapshot_count == 0:
+        raise HTTPException(
+            status_code=502,
+            detail=_error(
+                "UPSTREAM_UNAVAILABLE",
+                "Failed to fetch latest stock snapshot for factor scoring",
+                {"market": payload.market},
+            ),
+        )
 
     if df.empty:
         raise HTTPException(
             status_code=404,
-            detail=_error("DATA_NOT_FOUND", "No live stock universe for factor scoring", {}),
+            detail=_error("DATA_NOT_FOUND", "No usable live stock universe for factor scoring", {"market": payload.market}),
         )
 
-    ranked = score_factors(df, weights=weights, top_n=payload.top_n)
-    data = ranked.to_dict("records")
-    return {"data": data, "meta": {"count": len(data), "top_n": payload.top_n}}
+    ranked_all = score_factors(df, weights=weights, top_n=len(df))
+    total_items = len(ranked_all)
+    total_pages = max(1, (total_items + payload.page_size - 1) // payload.page_size)
+    page = min(payload.page, total_pages)
+    start_idx = (page - 1) * payload.page_size
+    end_idx = start_idx + payload.page_size
+    data = ranked_all.iloc[start_idx:end_idx].to_dict("records")
+
+    total_available, total_meta = fetch_stock_universe_total_with_meta(
+        payload.market,
+        force_refresh=payload.force_refresh,
+        allow_stale=payload.allow_stale,
+    )
+
+    return {
+        "data": data,
+        "meta": {
+            "count": len(data),
+            "total_items": total_items,
+            "total_pages": total_pages,
+            "page": page,
+            "page_size": payload.page_size,
+            "market": payload.market,
+            "symbols_fetched": snapshot_count,
+            "total_available": total_available,
+            "source": snapshot_meta.get("source"),
+            "stale": bool(snapshot_meta.get("stale")) or bool(total_meta.get("stale")),
+            "as_of": snapshot_meta.get("as_of"),
+            "cache_age_sec": snapshot_meta.get("cache_age_sec"),
+            "refresh_in_progress": False,
+        },
+    }

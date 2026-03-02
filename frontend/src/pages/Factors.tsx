@@ -1,18 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
-import { scoreFactors, type FactorWeights } from '../api/factors'
-
-type FactorRow = {
-  symbol: string
-  name: string
-  total_score: number
-  value_score: number
-  growth_score: number
-  momentum_score: number
-  quality_score: number
-  pe_ttm?: number
-  roe?: number
-}
+import { scoreFactors, type FactorMarket, type FactorRow, type FactorWeights } from '../api/factors'
 
 const factorList: Array<keyof FactorWeights> = ['value', 'growth', 'momentum', 'quality']
 
@@ -25,6 +13,13 @@ export default function FactorsPage() {
   })
   const [rows, setRows] = useState<FactorRow[]>([])
   const [loading, setLoading] = useState(false)
+  const [market, setMarket] = useState<FactorMarket>('us')
+  const [totalAvailable, setTotalAvailable] = useState<number>(0)
+  const [symbolsFetched, setSymbolsFetched] = useState<number>(0)
+  const [totalItems, setTotalItems] = useState<number>(0)
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [hasRun, setHasRun] = useState(false)
 
   const total = useMemo(
     () => weights.value + weights.growth + weights.momentum + weights.quality,
@@ -35,21 +30,60 @@ export default function FactorsPage() {
     setWeights((prev) => ({ ...prev, [key]: value }))
   }
 
-  const handleRun = async () => {
+  useEffect(() => {
+    setRows([])
+    setTotalAvailable(0)
+    setSymbolsFetched(0)
+    setTotalItems(0)
+    setPage(1)
+    setTotalPages(1)
+    setHasRun(false)
+  }, [market])
+
+  const runFactorsPage = async (targetPage: number) => {
     if (total !== 100) return
     setLoading(true)
     try {
-      const data = await scoreFactors(weights, 50)
-      setRows(data)
+      const resp = await scoreFactors(weights, market, targetPage, 50, 20000)
+      setRows(resp.data)
+      setTotalAvailable(Number(resp.meta.total_available ?? 0))
+      setSymbolsFetched(Number(resp.meta.symbols_fetched ?? 0))
+      setTotalItems(Number(resp.meta.total_items ?? 0))
+      setPage(Number(resp.meta.page ?? targetPage))
+      setTotalPages(Number(resp.meta.total_pages ?? 1))
+      setHasRun(true)
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleRun = async () => {
+    await runFactorsPage(1)
+  }
+
+  const gotoPrev = async () => {
+    if (loading || page <= 1) return
+    await runFactorsPage(page - 1)
+  }
+
+  const gotoNext = async () => {
+    if (loading || page >= totalPages) return
+    await runFactorsPage(page + 1)
   }
 
   return (
     <section className="page-card">
       <h2>Factor Ranking</h2>
       <p style={{ marginBottom: 16 }}>Stocks only. Crypto does not appear on factor ranking page.</p>
+      <div className="form-row" style={{ marginBottom: 12 }}>
+        <select className="text-input" value={market} onChange={(e) => setMarket(e.target.value as FactorMarket)}>
+          <option value="us">US Stocks</option>
+          <option value="cn">A Shares (CN)</option>
+        </select>
+        <span style={{ color: '#4d6485' }}>
+          可选总数: {totalAvailable.toLocaleString()} | 本次扫描: {symbolsFetched.toLocaleString()} | 排名总数: {totalItems.toLocaleString()}
+        </span>
+      </div>
 
       <div className="slider-wrap">
         {factorList.map((factor) => (
@@ -91,7 +125,7 @@ export default function FactorsPage() {
         <tbody>
           {rows.map((row, idx) => (
             <tr key={row.symbol}>
-              <td>{idx + 1}</td>
+              <td>{(page - 1) * 50 + idx + 1}</td>
               <td>{row.symbol}</td>
               <td>{row.name}</td>
               <td>{row.total_score?.toFixed?.(1)}</td>
@@ -103,6 +137,19 @@ export default function FactorsPage() {
           ))}
         </tbody>
       </table>
+      {hasRun ? (
+        <div className="form-row" style={{ marginTop: 12, justifyContent: 'space-between' }}>
+          <span style={{ color: '#4d6485' }}>页码: {page}/{totalPages}（每页 50 条）</span>
+          <div className="form-row">
+            <button className="primary-btn" type="button" onClick={gotoPrev} disabled={loading || page <= 1}>
+              Prev
+            </button>
+            <button className="primary-btn" type="button" onClick={gotoNext} disabled={loading || page >= totalPages}>
+              Next
+            </button>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }
