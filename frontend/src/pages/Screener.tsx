@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { extractApiError } from '../api/client'
 import { getScreenerSymbols, runScreener, type ScreenerMarket, type ScreenerRow } from '../api/screener'
 
 export default function ScreenerPage() {
@@ -13,6 +14,9 @@ export default function ScreenerPage() {
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [hasRun, setHasRun] = useState(false)
+  const [source, setSource] = useState<string>('-')
+  const [asOf, setAsOf] = useState<string>('-')
+  const [error, setError] = useState<string | null>(null)
 
   const [minPe, setMinPe] = useState('')
   const [maxPe, setMaxPe] = useState('')
@@ -26,6 +30,9 @@ export default function ScreenerPage() {
     setPage(1)
     setTotalPages(1)
     setHasRun(false)
+    setSource('-')
+    setAsOf('-')
+    setError(null)
 
     const loadSymbols = async () => {
       setLoadingSymbols(true)
@@ -33,9 +40,12 @@ export default function ScreenerPage() {
         const resp = await getScreenerSymbols(market, 20)
         setLatestSymbols(resp.data.map((item) => ({ symbol: item.symbol, name: item.name })))
         setTotalAvailable(typeof resp.meta.total_available === 'number' ? resp.meta.total_available : null)
+        setSource(resp.meta.source ?? '-')
+        setAsOf(resp.meta.as_of ?? '-')
       } catch {
         setLatestSymbols([])
         setTotalAvailable(null)
+        setError('Failed to load latest symbols. Check upstream availability.')
       } finally {
         setLoadingSymbols(false)
       }
@@ -46,6 +56,7 @@ export default function ScreenerPage() {
 
   const runQuery = async (targetPage: number) => {
     setLoading(true)
+    setError(null)
     try {
       const resp = await runScreener({
         min_pe: minPe ? Number(minPe) : undefined,
@@ -64,7 +75,11 @@ export default function ScreenerPage() {
       if (typeof resp.meta.total_available === 'number') {
         setTotalAvailable(resp.meta.total_available)
       }
+      setSource(resp.meta.source ?? '-')
+      setAsOf(resp.meta.as_of ?? '-')
       setHasRun(true)
+    } catch (err) {
+      setError(extractApiError(err, 'Failed to run screener with live market data'))
     } finally {
       setLoading(false)
     }
@@ -124,7 +139,14 @@ export default function ScreenerPage() {
         {page}
         /
         {totalPages}
+        {' '}| 数据源:
+        {' '}
+        {source}
+        {' '}| As Of:
+        {' '}
+        {asOf}
       </p>
+      {error ? <p className="warn-text">{error}</p> : null}
 
       <table className="table">
         <thead>

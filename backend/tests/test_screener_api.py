@@ -43,3 +43,8 @@ def test_build_live_rows_uses_compact_name_for_us() -> None:
     assert out[0]["name"] == "First Busey Corp DS"
     assert len(out[0]["name"]) <= MAX_ASSET_NAME_LEN
 
+
+def test_screener_request_defaults_to_strict_realtime() -> None:
+    payload = ScreenerRequest()
+    assert payload.force_refresh is True
+    assert payload.allow_stale is False

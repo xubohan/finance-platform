@@ -66,6 +66,12 @@ SNAPSHOT_STALE_TTL_SECONDS = 24 * 3600
 TOTAL_STALE_TTL_SECONDS = 7 * 24 * 3600
 SYMBOLS_STALE_TTL_SECONDS = 24 * 3600
 
+
+def _elapsed_ms(start_ts: float) -> int:
+    """Elapsed milliseconds for lightweight fetch telemetry."""
+    return max(0, int((time.perf_counter() - start_ts) * 1000))
+
+
 def _parse_eastmoney_payload(payload: dict, limit: int) -> list[dict]:
     """Parse Eastmoney A-share list payload into normalized symbol rows."""
     diff = payload.get("data", {}).get("diff", [])
@@ -674,11 +680,13 @@ def _fetch_sina_cn_snapshot(limit: int) -> list[dict]:
 
 def _fetch_stock_snapshot_live(market: Literal["us", "cn", "all"] = "us", limit: int = 100) -> list[dict]:
     """Fetch latest stock snapshot rows from upstream providers."""
+    started = time.perf_counter()
     market_norm = market.lower().strip()
     if market_norm not in {"us", "cn", "all"} or limit <= 0:
         return []
 
     rows: list[dict] = []
+    primary_provider = "nasdaq" if market_norm == "us" else ("sina" if market_norm == "cn" else "nasdaq+sina")
     try:
         if market_norm == "us":
             rows = _fetch_nasdaq_snapshot(limit)
@@ -690,6 +698,16 @@ def _fetch_stock_snapshot_live(market: Literal["us", "cn", "all"] = "us", limit:
     except Exception as exc:
         logger.warning("Primary snapshot fetch failed for %s: %s", market_norm, exc)
         rows = []
+
+    if rows:
+        logger.info(
+            "Live snapshot fetched market=%s provider=%s rows=%d elapsed_ms=%d",
+            market_norm,
+            primary_provider,
+            len(rows),
+            _elapsed_ms(started),
+        )
+        return rows[:limit]
 
     if not rows:
         try:
@@ -705,19 +723,33 @@ def _fetch_stock_snapshot_live(market: Literal["us", "cn", "all"] = "us", limit:
             rows = []
 
     if rows:
+        logger.info(
+            "Live snapshot fetched market=%s provider=eastmoney rows=%d elapsed_ms=%d",
+            market_norm,
+            len(rows),
+            _elapsed_ms(started),
+        )
         return rows[:limit]
 
     # Only return live snapshot data from upstream market feed.
+    logger.warning(
+        "Live snapshot unavailable market=%s limit=%d elapsed_ms=%d",
+        market_norm,
+        limit,
+        _elapsed_ms(started),
+    )
     return []
 
 
 def _fetch_stock_universe_total_live(market: Literal["us", "cn", "all"] = "us") -> int:
     """Fetch total available symbols for market from live upstream feed."""
+    started = time.perf_counter()
     market_norm = market.lower().strip()
     if market_norm not in {"us", "cn", "all"}:
         return 0
 
     primary_total = 0
+    primary_provider = "nasdaq" if market_norm == "us" else ("sina" if market_norm == "cn" else "nasdaq+sina")
     try:
         if market_norm == "us":
             primary_total = _fetch_nasdaq_total()
@@ -730,14 +762,36 @@ def _fetch_stock_universe_total_live(market: Literal["us", "cn", "all"] = "us") 
         primary_total = 0
 
     if primary_total > 0:
+        logger.info(
+            "Live universe total fetched market=%s provider=%s total=%d elapsed_ms=%d",
+            market_norm,
+            primary_provider,
+            primary_total,
+            _elapsed_ms(started),
+        )
         return primary_total
 
     try:
         if market_norm == "us":
-            return _fetch_eastmoney_total("us")
-        if market_norm == "cn":
-            return _fetch_eastmoney_total("cn")
-        return _fetch_eastmoney_total("us") + _fetch_eastmoney_total("cn")
+            total = _fetch_eastmoney_total("us")
+        elif market_norm == "cn":
+            total = _fetch_eastmoney_total("cn")
+        else:
+            total = _fetch_eastmoney_total("us") + _fetch_eastmoney_total("cn")
+        if total > 0:
+            logger.info(
+                "Live universe total fetched market=%s provider=eastmoney total=%d elapsed_ms=%d",
+                market_norm,
+                total,
+                _elapsed_ms(started),
+            )
+        else:
+            logger.warning(
+                "Live universe total unavailable market=%s elapsed_ms=%d",
+                market_norm,
+                _elapsed_ms(started),
+            )
+        return total
     except Exception as exc:
         logger.warning("Eastmoney universe total fetch failed for %s: %s", market_norm, exc)
         return 0
@@ -751,6 +805,7 @@ def fetch_stock_snapshot_with_meta(
     allow_stale: bool = True,
 ) -> tuple[list[dict], dict[str, Any]]:
     """Fetch latest stock snapshot rows with cache/source metadata."""
+    started = time.perf_counter()
     market_norm = market.lower().strip()
     if market_norm not in {"us", "cn", "all"} or limit <= 0:
         return [], _snapshot_meta("live", False, None)
@@ -762,6 +817,13 @@ def fetch_stock_snapshot_with_meta(
             rows = cached.get("rows")
             as_of = _parse_iso(cached.get("as_of"))
             if isinstance(rows, list) and rows:
+                logger.info(
+                    "Snapshot cache hit market=%s limit=%d rows=%d elapsed_ms=%d",
+                    market_norm,
+                    limit,
+                    len(rows),
+                    _elapsed_ms(started),
+                )
                 return rows[:limit], _snapshot_meta("cache", False, as_of)
 
     live_rows = _fetch_stock_snapshot_live(market_norm, limit)
@@ -770,6 +832,13 @@ def fetch_stock_snapshot_with_meta(
         payload = {"rows": live_rows, "as_of": _to_iso(as_of)}
         cache_set_json(fresh_key, payload, snapshot_ttl_seconds(market_norm))
         cache_set_json(stale_key, payload, SNAPSHOT_STALE_TTL_SECONDS)
+        logger.info(
+            "Snapshot live result market=%s limit=%d rows=%d elapsed_ms=%d",
+            market_norm,
+            limit,
+            len(live_rows),
+            _elapsed_ms(started),
+        )
         return live_rows[:limit], _snapshot_meta("live", False, as_of)
 
     if allow_stale:
@@ -778,8 +847,23 @@ def fetch_stock_snapshot_with_meta(
             rows = stale.get("rows")
             as_of = _parse_iso(stale.get("as_of"))
             if isinstance(rows, list) and rows:
+                logger.warning(
+                    "Snapshot stale cache fallback market=%s limit=%d rows=%d elapsed_ms=%d",
+                    market_norm,
+                    limit,
+                    len(rows),
+                    _elapsed_ms(started),
+                )
                 return rows[:limit], _snapshot_meta("cache", True, as_of)
 
+    logger.error(
+        "Snapshot fetch failed market=%s limit=%d force_refresh=%s allow_stale=%s elapsed_ms=%d",
+        market_norm,
+        limit,
+        force_refresh,
+        allow_stale,
+        _elapsed_ms(started),
+    )
     return [], _snapshot_meta("live", False, None)
 
 
@@ -807,6 +891,7 @@ def fetch_stock_universe_total_with_meta(
     allow_stale: bool = True,
 ) -> tuple[int, dict[str, Any]]:
     """Fetch universe total with cache/source metadata."""
+    started = time.perf_counter()
     market_norm = market.lower().strip()
     if market_norm not in {"us", "cn", "all"}:
         return 0, _snapshot_meta("live", False, None)
@@ -818,6 +903,12 @@ def fetch_stock_universe_total_with_meta(
             total = cached.get("total")
             as_of = _parse_iso(cached.get("as_of"))
             if isinstance(total, int) and total > 0:
+                logger.info(
+                    "Universe total cache hit market=%s total=%d elapsed_ms=%d",
+                    market_norm,
+                    total,
+                    _elapsed_ms(started),
+                )
                 return total, _snapshot_meta("cache", False, as_of)
 
     total = _fetch_stock_universe_total_live(market_norm)
@@ -826,6 +917,12 @@ def fetch_stock_universe_total_with_meta(
         payload = {"total": total, "as_of": _to_iso(as_of)}
         cache_set_json(fresh_key, payload, total_ttl_seconds(market_norm))
         cache_set_json(stale_key, payload, TOTAL_STALE_TTL_SECONDS)
+        logger.info(
+            "Universe total live result market=%s total=%d elapsed_ms=%d",
+            market_norm,
+            total,
+            _elapsed_ms(started),
+        )
         return total, _snapshot_meta("live", False, as_of)
 
     if allow_stale:
@@ -834,8 +931,21 @@ def fetch_stock_universe_total_with_meta(
             stale_total = stale.get("total")
             as_of = _parse_iso(stale.get("as_of"))
             if isinstance(stale_total, int) and stale_total > 0:
+                logger.warning(
+                    "Universe total stale cache fallback market=%s total=%d elapsed_ms=%d",
+                    market_norm,
+                    stale_total,
+                    _elapsed_ms(started),
+                )
                 return stale_total, _snapshot_meta("cache", True, as_of)
 
+    logger.error(
+        "Universe total fetch failed market=%s force_refresh=%s allow_stale=%s elapsed_ms=%d",
+        market_norm,
+        force_refresh,
+        allow_stale,
+        _elapsed_ms(started),
+    )
     return 0, _snapshot_meta("live", False, None)
 
 
@@ -862,6 +972,7 @@ def fetch_stock_symbols_with_meta(
     allow_stale: bool = True,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Fetch latest stock symbols by market with cache/source metadata."""
+    started = time.perf_counter()
     market_norm = market.lower().strip()
     if market_norm not in {"us", "cn", "all"} or limit <= 0:
         return [], _snapshot_meta("live", False, None)
@@ -874,6 +985,13 @@ def fetch_stock_symbols_with_meta(
             rows = cached.get("rows")
             as_of = _parse_iso(cached.get("as_of"))
             if isinstance(rows, list) and rows:
+                logger.info(
+                    "Symbols cache hit market=%s limit=%d rows=%d elapsed_ms=%d",
+                    market_norm,
+                    limit,
+                    len(rows),
+                    _elapsed_ms(started),
+                )
                 return rows[:limit], _snapshot_meta("cache", False, as_of)
 
     snapshots, snapshot_meta = fetch_stock_snapshot_with_meta(
@@ -896,6 +1014,13 @@ def fetch_stock_symbols_with_meta(
         payload = {"rows": rows, "as_of": as_of}
         cache_set_json(fresh_key, payload, symbols_ttl_seconds(market_norm))
         cache_set_json(stale_key, payload, SYMBOLS_STALE_TTL_SECONDS)
+        logger.info(
+            "Symbols live result market=%s limit=%d rows=%d elapsed_ms=%d",
+            market_norm,
+            limit,
+            len(rows),
+            _elapsed_ms(started),
+        )
         return rows, snapshot_meta
 
     if allow_stale:
@@ -904,8 +1029,23 @@ def fetch_stock_symbols_with_meta(
             stale_rows = stale.get("rows")
             as_of = _parse_iso(stale.get("as_of"))
             if isinstance(stale_rows, list) and stale_rows:
+                logger.warning(
+                    "Symbols stale cache fallback market=%s limit=%d rows=%d elapsed_ms=%d",
+                    market_norm,
+                    limit,
+                    len(stale_rows),
+                    _elapsed_ms(started),
+                )
                 return stale_rows[:limit], _snapshot_meta("cache", True, as_of)
 
+    logger.error(
+        "Symbols fetch failed market=%s limit=%d force_refresh=%s allow_stale=%s elapsed_ms=%d",
+        market_norm,
+        limit,
+        force_refresh,
+        allow_stale,
+        _elapsed_ms(started),
+    )
     return [], snapshot_meta
 
 
@@ -1166,8 +1306,10 @@ def fetch_ohlcv(
         DataFrame with columns: [time(UTC), open, high, low, close, volume].
         Returns empty DataFrame on failure.
     """
+    started = time.perf_counter()
     asset_type, provider = detect_provider(symbol)
     normalized = normalize_symbol(symbol, provider)
+    source = "openbb"
 
     try:
         df = _fetch_ohlcv_openbb(
@@ -1181,6 +1323,7 @@ def fetch_ohlcv(
     except Exception as exc:
         # Fallback keeps Step-5 gate deterministic even if OpenBB or upstream is flaky.
         logger.warning("OpenBB fetch_ohlcv failed for %s, fallback to yfinance: %s", symbol, exc)
+        source = "yfinance"
         try:
             df = _fetch_ohlcv_yfinance(
                 symbol=symbol,
@@ -1196,6 +1339,7 @@ def fetch_ohlcv(
         if df.empty:
             try:
                 # Second fallback for environments where Yahoo endpoints are blocked.
+                source = "stooq"
                 df = _fetch_ohlcv_stooq(
                     symbol=symbol,
                     provider=provider,
@@ -1206,7 +1350,16 @@ def fetch_ohlcv(
                 logger.error("Stooq fallback failed for %s: %s", symbol, final_exc)
                 return pd.DataFrame()
 
-    return _normalize_ohlcv_frame(df, symbol)
+    out = _normalize_ohlcv_frame(df, symbol)
+    logger.info(
+        "OHLCV fetch result symbol=%s provider=%s source=%s rows=%d elapsed_ms=%d",
+        symbol.upper(),
+        provider,
+        source,
+        len(out),
+        _elapsed_ms(started),
+    )
+    return out
 
 
 def fetch_fundamentals(symbol: str) -> pd.DataFrame:

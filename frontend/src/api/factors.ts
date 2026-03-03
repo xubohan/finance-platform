@@ -50,8 +50,8 @@ export async function scoreFactors(
   page = 1,
   pageSize = 50,
   symbolLimit = 20000,
-  forceRefresh = false,
-  allowStale = true,
+  forceRefresh = true,
+  allowStale = false,
 ) {
   const resp = await client.post('/factors/score', {
     weights,

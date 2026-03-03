@@ -67,6 +67,9 @@ def test_factors_score_full_universe_then_paginate(monkeypatch: pytest.MonkeyPat
     assert resp["meta"]["market"] == "us"
     assert resp["meta"]["symbols_fetched"] == 120
     assert resp["meta"]["total_available"] == 5432
+    assert resp["meta"]["source"] == "live"
+    assert resp["meta"]["stale"] is False
+    assert resp["meta"]["as_of"] == "2026-03-02T00:00:00+00:00"
     assert len(resp["data"]) == 50
 
 
@@ -81,6 +84,55 @@ def test_factors_score_rejects_invalid_weights() -> None:
 
     assert exc.value.status_code == 400
     assert exc.value.detail["error"]["code"] == "INVALID_WEIGHTS"
+
+
+def test_factors_score_deduplicates_symbols_across_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    base_rows = _snapshot_rows(120)
+    duplicated_rows = base_rows + base_rows[:20]
+
+    def _mock_snapshot(
+        market: str,
+        limit: int,
+        *,
+        force_refresh: bool = False,
+        allow_stale: bool = True,
+    ) -> tuple[list[dict], dict]:
+        assert market == "us"
+        return duplicated_rows[:limit], {"source": "live", "stale": False, "as_of": "2026-03-02T00:00:00+00:00", "cache_age_sec": 0}
+
+    monkeypatch.setattr(factors_api, "fetch_stock_snapshot_with_meta", _mock_snapshot)
+    monkeypatch.setattr(
+        factors_api,
+        "fetch_stock_universe_total_with_meta",
+        lambda market, force_refresh=False, allow_stale=True: (
+            5432,
+            {"source": "live", "stale": False, "as_of": "2026-03-02T00:00:00+00:00", "cache_age_sec": 0},
+        ),
+    )
+
+    page1 = factors_api.FactorScoreRequest(
+        weights=factors_api.FactorWeights(value=25, growth=25, momentum=25, quality=25),
+        market="us",
+        symbol_limit=20000,
+        page=1,
+        page_size=50,
+    )
+    page2 = factors_api.FactorScoreRequest(
+        weights=factors_api.FactorWeights(value=25, growth=25, momentum=25, quality=25),
+        market="us",
+        symbol_limit=20000,
+        page=2,
+        page_size=50,
+    )
+    resp_page1 = asyncio.run(factors_api.factors_score(page1))
+    resp_page2 = asyncio.run(factors_api.factors_score(page2))
+
+    symbols_page1 = {row["symbol"] for row in resp_page1["data"]}
+    symbols_page2 = {row["symbol"] for row in resp_page2["data"]}
+
+    assert resp_page1["meta"]["total_items"] == 120
+    assert resp_page2["meta"]["total_items"] == 120
+    assert symbols_page1.isdisjoint(symbols_page2)
 
 
 def test_factors_score_returns_502_when_live_source_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:

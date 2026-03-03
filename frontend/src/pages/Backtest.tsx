@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { extractApiError } from '../api/client'
 import { runBacktestLab, type BacktestLabRequest, type BacktestLabRow } from '../api/backtest'
 
 export default function BacktestPage() {
@@ -20,9 +21,14 @@ export default function BacktestPage() {
   const [symbolsFetched, setSymbolsFetched] = useState(0)
   const [symbolsBacktested, setSymbolsBacktested] = useState(0)
   const [totalItems, setTotalItems] = useState(0)
+  const [source, setSource] = useState<string>('-')
+  const [asOf, setAsOf] = useState<string>('-')
+  const [ohlcvLive, setOhlcvLive] = useState(0)
+  const [ohlcvFailed, setOhlcvFailed] = useState(0)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [hasRun, setHasRun] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const buildPayload = (targetPage: number): BacktestLabRequest => {
     const parameters: Record<string, number> = {}
@@ -49,6 +55,7 @@ export default function BacktestPage() {
 
   const runPage = async (targetPage: number) => {
     setLoading(true)
+    setError(null)
     try {
       const resp = await runBacktestLab(buildPayload(targetPage))
       setRows(resp.data)
@@ -56,9 +63,15 @@ export default function BacktestPage() {
       setSymbolsFetched(Number(resp.meta.symbols_fetched ?? 0))
       setSymbolsBacktested(Number(resp.meta.symbols_backtested ?? 0))
       setTotalItems(Number(resp.meta.total_items ?? 0))
+      setSource(resp.meta.source ?? '-')
+      setAsOf(resp.meta.as_of ?? '-')
+      setOhlcvLive(Number(resp.meta.ohlcv_live_symbols ?? 0))
+      setOhlcvFailed(Number(resp.meta.ohlcv_failed_symbols ?? 0))
       setPage(Number(resp.meta.page ?? targetPage))
       setTotalPages(Number(resp.meta.total_pages ?? 1))
       setHasRun(true)
+    } catch (err) {
+      setError(extractApiError(err, 'Failed to run market backtest with live data'))
     } finally {
       setLoading(false)
     }
@@ -74,9 +87,14 @@ export default function BacktestPage() {
     setSymbolsFetched(0)
     setSymbolsBacktested(0)
     setTotalItems(0)
+    setSource('-')
+    setAsOf('-')
+    setOhlcvLive(0)
+    setOhlcvFailed(0)
     setPage(1)
     setTotalPages(1)
     setHasRun(false)
+    setError(null)
   }, [market])
 
   const gotoPrev = async () => {
@@ -190,8 +208,9 @@ export default function BacktestPage() {
       </div>
 
       <p style={{ marginTop: 12, marginBottom: 10, color: '#4d6485' }}>
-        可选总数: {totalAvailable.toLocaleString()} | 本次扫描: {symbolsFetched.toLocaleString()} | 成功回测: {symbolsBacktested.toLocaleString()} | 结果总数: {totalItems.toLocaleString()}
+        可选总数: {totalAvailable.toLocaleString()} | 本次扫描: {symbolsFetched.toLocaleString()} | 成功回测: {symbolsBacktested.toLocaleString()} | 结果总数: {totalItems.toLocaleString()} | K线成功: {ohlcvLive.toLocaleString()} | K线失败: {ohlcvFailed.toLocaleString()} | 数据源: {source} | As Of: {asOf}
       </p>
+      {error ? <p className="warn-text">{error}</p> : null}
 
       <table className="table">
         <thead>

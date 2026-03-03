@@ -72,7 +72,7 @@ async def search_assets(
     rows: list[dict[str, Any]] = []
 
     if type in ("all", "stock"):
-        live_universe = fetch_stock_symbols(market="all", limit=600)
+        live_universe = fetch_stock_symbols(market="all", limit=600, force_refresh=True, allow_stale=False)
         if not live_universe and type == "stock":
             raise HTTPException(
                 status_code=502,
@@ -240,8 +240,8 @@ async def get_realtime(symbol: str, db: AsyncSession = Depends(get_db)) -> dict[
 async def top_movers(
     type: str = Query("stock", pattern="^(stock|crypto)$"),
     limit: int = Query(10, ge=1, le=50),
-    force_refresh: bool = Query(False),
-    allow_stale: bool = Query(True),
+    force_refresh: bool = Query(True),
+    allow_stale: bool = Query(False),
 ) -> dict[str, Any]:
     """Return top movers from live upstream feeds."""
     if type == "stock":

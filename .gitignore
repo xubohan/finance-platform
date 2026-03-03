@@ -4,3 +4,10 @@ ai_req/
 # Frontend build/install artifacts
 frontend/node_modules/
 frontend/dist/
+
+# Local Python/cache artifacts
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/

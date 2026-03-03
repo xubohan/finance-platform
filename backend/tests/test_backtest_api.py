@@ -45,9 +45,15 @@ def test_backtest_lab_full_universe_then_paginate(monkeypatch: pytest.MonkeyPatc
     sample = _snapshot_rows(120)
     candles = _ohlcv_rows()
 
-    def _mock_snapshot(market: str, limit: int) -> list[dict]:
+    def _mock_snapshot(
+        market: str,
+        limit: int,
+        *,
+        force_refresh: bool = True,
+        allow_stale: bool = False,
+    ) -> tuple[list[dict], dict]:
         assert market == "us"
-        return sample[:limit]
+        return sample[:limit], {"source": "live", "stale": False, "as_of": "2026-03-02T00:00:00+00:00", "cache_age_sec": 0}
 
     def _mock_run(self, df, symbol, asset_type):  # type: ignore[no-untyped-def]
         score = float(int(symbol[2:]))
@@ -62,9 +68,16 @@ def test_backtest_lab_full_universe_then_paginate(monkeypatch: pytest.MonkeyPatc
             }
         }
 
-    monkeypatch.setattr(backtest_api, "fetch_stock_snapshot", _mock_snapshot)
+    monkeypatch.setattr(backtest_api, "fetch_stock_snapshot_with_meta", _mock_snapshot)
     monkeypatch.setattr(backtest_api, "fetch_ohlcv", lambda **kwargs: candles)
-    monkeypatch.setattr(backtest_api, "fetch_stock_universe_total", lambda market: 6789)
+    monkeypatch.setattr(
+        backtest_api,
+        "fetch_stock_universe_total_with_meta",
+        lambda market, force_refresh=True, allow_stale=False: (
+            6789,
+            {"source": "live", "stale": False, "as_of": "2026-03-02T00:00:00+00:00", "cache_age_sec": 0},
+        ),
+    )
     monkeypatch.setattr(backtest_api.BacktestEngine, "run", _mock_run)
 
     payload = backtest_api.BacktestLabRequest(
@@ -89,12 +102,22 @@ def test_backtest_lab_full_universe_then_paginate(monkeypatch: pytest.MonkeyPatc
     assert resp["meta"]["symbols_fetched"] == 120
     assert resp["meta"]["symbols_backtested"] == 120
     assert resp["meta"]["total_available"] == 6789
+    assert resp["meta"]["source"] == "live"
+    assert resp["meta"]["stale"] is False
+    assert resp["meta"]["as_of"] == "2026-03-02T00:00:00+00:00"
+    assert resp["meta"]["ohlcv_live_symbols"] == 120
+    assert resp["meta"]["ohlcv_failed_symbols"] == 0
+    assert resp["meta"]["ohlcv_local_fallback_symbols"] == 0
     assert len(resp["data"]) == 50
     assert resp["data"][0]["symbol"] == "US00070"
 
 
 def test_backtest_lab_returns_502_when_live_source_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(backtest_api, "fetch_stock_snapshot", lambda market, limit: [])
+    monkeypatch.setattr(
+        backtest_api,
+        "fetch_stock_snapshot_with_meta",
+        lambda market, limit, force_refresh=True, allow_stale=False: ([], {"source": "live", "stale": False, "as_of": None, "cache_age_sec": None}),
+    )
 
     payload = backtest_api.BacktestLabRequest(
         market="cn",

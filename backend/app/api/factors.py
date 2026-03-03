@@ -31,8 +31,8 @@ class FactorScoreRequest(BaseModel):
     symbol_limit: int = Field(20000, ge=50, le=20000)
     page: int = Field(1, ge=1)
     page_size: int = Field(50, ge=50, le=50)
-    force_refresh: bool = False
-    allow_stale: bool = True
+    force_refresh: bool = True
+    allow_stale: bool = False
 
 
 def _error(code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -60,8 +60,13 @@ def _snapshot_universe(
         return pd.DataFrame(), 0, snapshot_meta
 
     normalized: list[dict[str, Any]] = []
+    seen_symbols: set[str] = set()
 
     for row in rows:
+        symbol = str(row.get("symbol", "")).upper()
+        if not symbol or symbol in seen_symbols:
+            continue
+
         pe = row.get("pe_ttm")
         roe = row.get("roe")
         growth = row.get("profit_yoy")
@@ -74,8 +79,8 @@ def _snapshot_universe(
 
         normalized.append(
             {
-                "symbol": str(row.get("symbol", "")).upper(),
-                "name": row.get("name") or str(row.get("symbol", "")).upper(),
+                "symbol": symbol,
+                "name": row.get("name") or symbol,
                 "pe_ttm": float(pe),
                 "profit_yoy": float(growth),
                 # Snapshot provides current change pct, used as short-term momentum proxy.
@@ -83,6 +88,7 @@ def _snapshot_universe(
                 "roe": float(roe),
             }
         )
+        seen_symbols.add(symbol)
 
     return pd.DataFrame(normalized), len(rows), snapshot_meta
 

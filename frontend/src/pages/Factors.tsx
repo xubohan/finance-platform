@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import { extractApiError } from '../api/client'
 import { scoreFactors, type FactorMarket, type FactorRow, type FactorWeights } from '../api/factors'
 
 const factorList: Array<keyof FactorWeights> = ['value', 'growth', 'momentum', 'quality']
@@ -20,6 +21,9 @@ export default function FactorsPage() {
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [hasRun, setHasRun] = useState(false)
+  const [source, setSource] = useState<string>('-')
+  const [asOf, setAsOf] = useState<string>('-')
+  const [error, setError] = useState<string | null>(null)
 
   const total = useMemo(
     () => weights.value + weights.growth + weights.momentum + weights.quality,
@@ -38,11 +42,15 @@ export default function FactorsPage() {
     setPage(1)
     setTotalPages(1)
     setHasRun(false)
+    setSource('-')
+    setAsOf('-')
+    setError(null)
   }, [market])
 
   const runFactorsPage = async (targetPage: number) => {
     if (total !== 100) return
     setLoading(true)
+    setError(null)
     try {
       const resp = await scoreFactors(weights, market, targetPage, 50, 20000)
       setRows(resp.data)
@@ -51,7 +59,11 @@ export default function FactorsPage() {
       setTotalItems(Number(resp.meta.total_items ?? 0))
       setPage(Number(resp.meta.page ?? targetPage))
       setTotalPages(Number(resp.meta.total_pages ?? 1))
+      setSource(resp.meta.source ?? '-')
+      setAsOf(resp.meta.as_of ?? '-')
       setHasRun(true)
+    } catch (err) {
+      setError(extractApiError(err, 'Failed to calculate factors with live market data'))
     } finally {
       setLoading(false)
     }
@@ -82,8 +94,10 @@ export default function FactorsPage() {
         </select>
         <span style={{ color: '#4d6485' }}>
           可选总数: {totalAvailable.toLocaleString()} | 本次扫描: {symbolsFetched.toLocaleString()} | 排名总数: {totalItems.toLocaleString()}
+          {' '}| 数据源: {source} | As Of: {asOf}
         </span>
       </div>
+      {error ? <p className="warn-text">{error}</p> : null}
 
       <div className="slider-wrap">
         {factorList.map((factor) => (

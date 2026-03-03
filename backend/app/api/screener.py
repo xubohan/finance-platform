@@ -53,8 +53,8 @@ class ScreenerRequest(BaseModel):
     symbol_limit: int = Field(20000, ge=50, le=20000)
     page: int = Field(1, ge=1)
     page_size: int = Field(50, ge=50, le=50)
-    force_refresh: bool = False
-    allow_stale: bool = True
+    force_refresh: bool = True
+    allow_stale: bool = False
 
 
 def _error(code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -228,8 +228,8 @@ async def _upsert_latest_fundamentals(db: AsyncSession, rows: list[dict[str, Any
 async def get_screener_symbols(
     market: Literal["us", "cn"] = Query("us"),
     limit: int = Query(50, ge=10, le=300),
-    force_refresh: bool = Query(False),
-    allow_stale: bool = Query(True),
+    force_refresh: bool = Query(True),
+    allow_stale: bool = Query(False),
 ) -> dict[str, Any]:
     """Fetch latest stock symbol list by market (US / CN)."""
     rows, symbol_meta = fetch_stock_symbols_with_meta(

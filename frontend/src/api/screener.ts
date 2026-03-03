@@ -47,7 +47,11 @@ export type ScreenerResponse = {
 }
 
 export async function runScreener(params: ScreenerParams) {
-  const resp = await client.post('/screener/run', params)
+  const resp = await client.post('/screener/run', {
+    force_refresh: true,
+    allow_stale: false,
+    ...params,
+  })
   return {
     data: resp.data?.data ?? [],
     meta: resp.data?.meta ?? {},
@@ -57,8 +61,8 @@ export async function runScreener(params: ScreenerParams) {
 export async function getScreenerSymbols(
   market: ScreenerMarket,
   limit = 30,
-  forceRefresh = false,
-  allowStale = true,
+  forceRefresh = true,
+  allowStale = false,
 ) {
   const resp = await client.get('/screener/symbols', {
     params: { market, limit, force_refresh: forceRefresh, allow_stale: allowStale },

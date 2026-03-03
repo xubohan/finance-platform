@@ -25,6 +25,8 @@ export type BacktestLabRequest = {
   symbol_limit?: number
   page?: number
   page_size?: number
+  force_refresh?: boolean
+  allow_stale?: boolean
 }
 
 export type BacktestLabRow = {
@@ -49,7 +51,12 @@ export type BacktestLabMeta = {
   symbols_fetched?: number
   symbols_backtested?: number
   total_available?: number
+  source?: 'cache' | 'live' | 'mixed'
+  stale?: boolean
+  as_of?: string | null
+  cache_age_sec?: number | null
   ohlcv_live_symbols?: number
+  ohlcv_failed_symbols?: number
   ohlcv_local_fallback_symbols?: number
 }
 
@@ -59,7 +66,11 @@ export type BacktestLabResponse = {
 }
 
 export async function runBacktestLab(payload: BacktestLabRequest) {
-  const resp = await client.post('/backtest/lab', payload)
+  const resp = await client.post('/backtest/lab', {
+    force_refresh: true,
+    allow_stale: false,
+    ...payload,
+  })
   return {
     data: resp.data?.data ?? [],
     meta: resp.data?.meta ?? {},
