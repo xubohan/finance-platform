@@ -47,6 +47,6 @@ def test_fetch_stock_universe_total_by_market(monkeypatch) -> None:
     monkeypatch.setattr(openbb_adapter, "_fetch_nasdaq_total", lambda: 100)
     monkeypatch.setattr(openbb_adapter, "_fetch_sina_cn_total", lambda: 200)
 
-    assert openbb_adapter.fetch_stock_universe_total("us") == 100
-    assert openbb_adapter.fetch_stock_universe_total("cn") == 200
-    assert openbb_adapter.fetch_stock_universe_total("all") == 300
+    assert openbb_adapter.fetch_stock_universe_total("us", force_refresh=True, allow_stale=False) == 100
+    assert openbb_adapter.fetch_stock_universe_total("cn", force_refresh=True, allow_stale=False) == 200
+    assert openbb_adapter.fetch_stock_universe_total("all", force_refresh=True, allow_stale=False) == 300

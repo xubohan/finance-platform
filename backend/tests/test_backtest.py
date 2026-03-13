@@ -47,8 +47,8 @@ def test_backtest_runs_and_outputs_metrics() -> None:
 def test_backtest_contains_only_past_data_in_strategy_call() -> None:
     class LeakGuardStrategy(MACrossStrategy):
         def generate_signal(self, partial_df: pd.DataFrame) -> int:
-            # If engine leaks future bars, this assert would fail.
-            assert len(partial_df) <= 120
+            # Execution bar itself must not be visible to the strategy.
+            assert len(partial_df) < len(df)
             return super().generate_signal(partial_df)
 
     df = _sample_df()
@@ -56,3 +56,29 @@ def test_backtest_contains_only_past_data_in_strategy_call() -> None:
     result = engine.run(df, symbol="AAPL", asset_type="stock")
 
     assert len(result["equity_curve"]) == len(df)
+
+
+def test_backtest_executes_on_next_bar_open() -> None:
+    class StepStrategy:
+        def generate_signal(self, partial_df: pd.DataFrame) -> int:
+            if len(partial_df) == 2:
+                return 1
+            if len(partial_df) == 3:
+                return -1
+            return 0
+
+    df = pd.DataFrame(
+        {
+            "time": pd.to_datetime(["2023-01-01", "2023-01-02", "2023-01-03", "2023-01-04"], utc=True),
+            "open": [100.0, 110.0, 120.0, 130.0],
+            "high": [101.0, 111.0, 121.0, 131.0],
+            "low": [99.0, 109.0, 119.0, 129.0],
+            "close": [105.0, 115.0, 125.0, 135.0],
+            "volume": [1000.0, 1000.0, 1000.0, 1000.0],
+        }
+    )
+
+    engine = BacktestEngine(strategy=StepStrategy(), initial_capital=100000)
+    result = engine.run(df, symbol="AAPL", asset_type="stock")
+
+    assert [trade["price"] for trade in result["trades"]] == [120.0, 130.0]

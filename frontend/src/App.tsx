@@ -1,12 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 
 import AppShell from './components/layout/AppShell'
-import AIAnalysisPage from './pages/AIAnalysis'
-import BacktestPage from './pages/Backtest'
-import ChartPage from './pages/Chart'
-import FactorsPage from './pages/Factors'
 import MarketPage from './pages/Market'
-import ScreenerPage from './pages/Screener'
 
 export default function App() {
   return (
@@ -14,11 +9,12 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/market" replace />} />
         <Route path="/market" element={<MarketPage />} />
-        <Route path="/chart" element={<ChartPage />} />
-        <Route path="/screener" element={<ScreenerPage />} />
-        <Route path="/factors" element={<FactorsPage />} />
-        <Route path="/backtest" element={<BacktestPage />} />
-        <Route path="/ai" element={<AIAnalysisPage />} />
+        <Route path="/chart" element={<Navigate to="/market" replace />} />
+        <Route path="/screener" element={<Navigate to="/market" replace />} />
+        <Route path="/factors" element={<Navigate to="/market" replace />} />
+        <Route path="/backtest" element={<Navigate to="/market" replace />} />
+        <Route path="/ai" element={<Navigate to="/market" replace />} />
+        <Route path="*" element={<Navigate to="/market" replace />} />
       </Routes>
     </AppShell>
   )

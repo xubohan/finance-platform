@@ -1,0 +1,400 @@
+backend-1  | ['600519.SS']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['PDD']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | OpenBB fetch_ohlcv failed for PDD, fallback to yfinance: 
+backend-1  | [Empty] -> No results found. Try adjusting the query parameters.
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['PDD']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['COP']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | OpenBB fetch_ohlcv failed for COP, fallback to yfinance: 
+backend-1  | [Empty] -> No results found. Try adjusting the query parameters.
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['COP']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['QCOM']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | OpenBB fetch_ohlcv failed for QCOM, fallback to yfinance: 
+backend-1  | [Empty] -> No results found. Try adjusting the query parameters.
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['QCOM']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | INFO:     172.19.0.8:45178 - "POST /api/v1/backtest/run HTTP/1.0" 200 OK
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['ACN']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | OpenBB fetch_ohlcv failed for ACN, fallback to yfinance: 
+backend-1  | [Empty] -> No results found. Try adjusting the query parameters.
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['ACN']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['WELL']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | OpenBB fetch_ohlcv failed for WELL, fallback to yfinance: 
+backend-1  | [Empty] -> No results found. Try adjusting the query parameters.
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['WELL']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['BKNG']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | OpenBB fetch_ohlcv failed for BKNG, fallback to yfinance: 
+backend-1  | [Empty] -> No results found. Try adjusting the query parameters.
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['BKNG']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['BKNG']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | OpenBB fetch_ohlcv failed for BKNG, fallback to yfinance: 
+backend-1  | [Empty] -> No results found. Try adjusting the query parameters.
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['BKNG']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['DHR']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | OpenBB fetch_ohlcv failed for DHR, fallback to yfinance: 
+backend-1  | [Empty] -> No results found. Try adjusting the query parameters.
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['DHR']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['LOW']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | OpenBB fetch_ohlcv failed for LOW, fallback to yfinance: 
+backend-1  | [Empty] -> No results found. Try adjusting the query parameters.
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['LOW']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['SYK']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | OpenBB fetch_ohlcv failed for SYK, fallback to yfinance: 
+backend-1  | [Empty] -> No results found. Try adjusting the query parameters.
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['SYK']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['SYK']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | OpenBB fetch_ohlcv failed for SYK, fallback to yfinance: 
+backend-1  | [Empty] -> No results found. Try adjusting the query parameters.
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['SYK']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | INFO:     Started server process [1]
+backend-1  | INFO:     Waiting for application startup.
+backend-1  | INFO:     Application startup complete.
+backend-1  | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+backend-1  | INFO:     172.19.0.8:42762 - "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.0" 200 OK
+backend-1  | INFO:     172.19.0.8:42776 - "POST /api/v1/screener/run HTTP/1.0" 200 OK
+backend-1  | INFO:     172.19.0.8:52248 - "POST /api/v1/factors/score HTTP/1.0" 200 OK
+backend-1  | INFO:     172.19.0.8:49466 - "GET /api/v1/market/top-movers?type=stock&limit=5 HTTP/1.0" 200 OK
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['AAPL']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | OpenBB fetch_ohlcv failed for AAPL, fallback to yfinance: 
+backend-1  | [Empty] -> No results found. Try adjusting the query parameters.
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['AAPL']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | INFO:     172.19.0.8:49478 - "GET /api/v1/market/AAPL/quote HTTP/1.0" 200 OK
+backend-1  | CoinGecko fetch failed: HTTPSConnectionPool(host='api.coingecko.com', port=443): Max retries exceeded with url: /api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true (Caused by ConnectTimeoutError(<HTTPSConnection(host='api.coingecko.com', port=443) at 0x7a806cd6a190>, 'Connection to api.coingecko.com timed out. (connect timeout=5)'))
+backend-1  | CoinGecko fetch failed: HTTPSConnectionPool(host='api.coingecko.com', port=443): Max retries exceeded with url: /api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true (Caused by ConnectTimeoutError(<HTTPSConnection(host='api.coingecko.com', port=443) at 0x7a8067f60b50>, 'Connection to api.coingecko.com timed out. (connect timeout=5)'))
+backend-1  | CoinGecko fetch failed: HTTPSConnectionPool(host='api.coingecko.com', port=443): Max retries exceeded with url: /api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true (Caused by ConnectTimeoutError(<HTTPSConnection(host='api.coingecko.com', port=443) at 0x7a8067f63550>, 'Connection to api.coingecko.com timed out. (connect timeout=5)'))
+backend-1  | INFO:     172.19.0.8:47768 - "GET /api/v1/market/BTC/quote HTTP/1.0" 200 OK
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['AAPL']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | OpenBB fetch_ohlcv failed for AAPL, fallback to yfinance: 
+backend-1  | [Empty] -> No results found. Try adjusting the query parameters.
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['AAPL']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | INFO:     172.19.0.8:55806 - "GET /api/v1/market/AAPL/kline?period=1d&start=2023-03-06&end=2026-03-06 HTTP/1.0" 200 OK
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['AAPL']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | OpenBB fetch_ohlcv failed for AAPL, fallback to yfinance: 
+backend-1  | [Empty] -> No results found. Try adjusting the query parameters.
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['AAPL']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | INFO:     172.19.0.8:47562 - "POST /api/v1/backtest/run HTTP/1.0" 200 OK
+backend-1  | OpenBB fetch_ohlcv failed for 600519.SH, fallback to yfinance: 
+backend-1  | [Error] -> 1 validations error(s)
+backend-1  | [Arg] provider -> input: akshare -> Input should be 'fmp', 'intrinio', 'polygon', 'tiingo' or 'yfinance'
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['600519.SS']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | INFO:     172.19.0.8:55932 - "POST /api/v1/backtest/run HTTP/1.0" 200 OK
+backend-1  | OpenBB fetch_ohlcv failed for 600519.SH, fallback to yfinance: 
+backend-1  | [Error] -> 1 validations error(s)
+backend-1  | [Arg] provider -> input: akshare -> Input should be 'fmp', 'intrinio', 'polygon', 'tiingo' or 'yfinance'
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['600519.SS']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | INFO:     172.19.0.8:55934 - "POST /api/v1/backtest/run HTTP/1.0" 200 OK
+backend-1  | /app/app/api/factors.py:205: UserWarning: Converting to Period representation will drop timezone information.
+backend-1  |   period = ts.to_period(freq)
+backend-1  | INFO:     172.19.0.8:50062 - "POST /api/v1/factors/backtest HTTP/1.0" 200 OK
+backend-1  | /app/app/api/factors.py:205: UserWarning: Converting to Period representation will drop timezone information.
+backend-1  |   period = ts.to_period(freq)
+backend-1  | INFO:     172.19.0.8:50070 - "POST /api/v1/factors/backtest HTTP/1.0" 200 OK
+backend-1  | INFO:     172.19.0.8:49340 - "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.0" 200 OK
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:23:18 +0000] "POST /api/v1/factors/score HTTP/1.1" 200 15022 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:23:25 +0000] "GET /api/v1/market/top-movers?type=stock&limit=5 HTTP/1.1" 200 435 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:23:28 +0000] "GET /api/v1/market/AAPL/quote HTTP/1.1" 200 278 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:23:28 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 200 289 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:23:30 +0000] "GET /api/v1/market/AAPL/kline?period=1d&start=2023-03-06&end=2026-03-06 HTTP/1.1" 200 117932 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:23:31 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 11784 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:23:32 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 36720 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:23:34 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 61636 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:25:41 +0000] "POST /api/v1/factors/backtest HTTP/1.1" 200 71314 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:28:15 +0000] "POST /api/v1/factors/backtest HTTP/1.1" 200 117862 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:31:45 +0000] "POST /api/v1/backtest/lab HTTP/1.1" 200 10034 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:35:44 +0000] "GET / HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:35:44 +0000] "GET /health HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:36:08 +0000] "GET / HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:36:08 +0000] "GET /assets/index-DXU561I5.js HTTP/1.1" 200 397039 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:36:08 +0000] "GET /assets/index-WX_Nm6Xc.css HTTP/1.1" 200 2931 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:36:15 +0000] "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1" 200 2050 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:36:32 +0000] "POST /api/v1/screener/run HTTP/1.1" 200 5786 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:36:43 +0000] "POST /api/v1/factors/score HTTP/1.1" 200 15022 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:36:51 +0000] "GET /api/v1/market/top-movers?type=stock&limit=5 HTTP/1.1" 200 435 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:36:54 +0000] "GET /api/v1/market/AAPL/quote HTTP/1.1" 200 278 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:36:55 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 200 289 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:36:56 +0000] "GET /api/v1/market/AAPL/kline?period=1d&start=2023-03-06&end=2026-03-06 HTTP/1.1" 200 117932 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:36:57 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 11784 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:36:58 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 36720 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:37:00 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 61636 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:37:00 +0000] "POST /api/v1/factors/backtest HTTP/1.1" 200 71313 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:10:37:00 +0000] "POST /api/v1/factors/backtest HTTP/1.1" 200 117861 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:50:45 +0000] "GET / HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:50:56 +0000] "GET / HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:50:56 +0000] "GET /assets/index-82se9_3v.js HTTP/1.1" 200 396807 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:50:56 +0000] "GET /assets/index-WX_Nm6Xc.css HTTP/1.1" 200 2931 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:51:05 +0000] "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1" 200 2050 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:51:21 +0000] "POST /api/v1/screener/run HTTP/1.1" 200 5797 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:51:44 +0000] "POST /api/v1/factors/score HTTP/1.1" 200 15084 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:51:48 +0000] "GET /api/v1/market/top-movers?type=stock&limit=5 HTTP/1.1" 200 439 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:52:41 +0000] "GET /api/v1/market/AAPL/quote HTTP/1.1" 200 268 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:52:46 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 502 138 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:52:53 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 502 138 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:53:00 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 502 138 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:54:36 +0000] "GET / HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:54:37 +0000] "GET /assets/index-82se9_3v.js HTTP/1.1" 200 396807 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:54:37 +0000] "GET /assets/index-WX_Nm6Xc.css HTTP/1.1" 200 2931 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:54:47 +0000] "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1" 200 2050 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:55:07 +0000] "POST /api/v1/screener/run HTTP/1.1" 200 5796 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:55:23 +0000] "POST /api/v1/factors/score HTTP/1.1" 200 15059 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:55:28 +0000] "GET /api/v1/market/top-movers?type=stock&limit=5 HTTP/1.1" 200 439 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:56:15 +0000] "GET /api/v1/market/AAPL/quote HTTP/1.1" 200 266 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:56:20 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 502 138 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:56:27 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 502 138 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:56:34 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 502 138 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:56:51 +0000] "GET / HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:56:51 +0000] "GET /assets/index-82se9_3v.js HTTP/1.1" 200 396807 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:56:51 +0000] "GET /assets/index-WX_Nm6Xc.css HTTP/1.1" 200 2931 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:56:51 +0000] "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1" 502 157 "-" "curl/7.81.0" "-"
+nginx-1    | 2026/03/06 14:56:51 [error] 32#32: *454 connect() failed (111: Connection refused) while connecting to upstream, client: 172.19.0.1, server: _, request: "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1", upstream: "http://172.19.0.5:8000/api/v1/screener/symbols?market=us&limit=20", host: "127.0.0.1"
+nginx-1    | 2026/03/06 14:56:53 [error] 32#32: *456 connect() failed (111: Connection refused) while connecting to upstream, client: 172.19.0.1, server: _, request: "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1", upstream: "http://172.19.0.5:8000/api/v1/screener/symbols?market=us&limit=20", host: "127.0.0.1"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:56:53 +0000] "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1" 502 157 "-" "curl/7.81.0" "-"
+nginx-1    | 2026/03/06 14:56:55 [error] 32#32: *458 connect() failed (111: Connection refused) while connecting to upstream, client: 172.19.0.1, server: _, request: "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1", upstream: "http://172.19.0.5:8000/api/v1/screener/symbols?market=us&limit=20", host: "127.0.0.1"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:56:55 +0000] "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1" 502 157 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:57:56 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 200 302 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:58:09 +0000] "GET / HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:58:09 +0000] "GET /assets/index-82se9_3v.js HTTP/1.1" 200 396807 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:58:09 +0000] "GET /assets/index-WX_Nm6Xc.css HTTP/1.1" 200 2931 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:58:16 +0000] "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1" 200 2050 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:58:33 +0000] "POST /api/v1/screener/run HTTP/1.1" 200 5800 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:58:58 +0000] "POST /api/v1/factors/score HTTP/1.1" 200 15065 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:59:03 +0000] "GET /api/v1/market/top-movers?type=stock&limit=5 HTTP/1.1" 200 439 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:59:51 +0000] "GET /api/v1/market/AAPL/quote HTTP/1.1" 200 267 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:14:59:53 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 200 302 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:00:38 +0000] "GET /api/v1/market/AAPL/kline?period=1d&start=2023-03-06&end=2026-03-06 HTTP/1.1" 200 87863 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:01:27 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 11727 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:02:22 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 36458 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:03:02 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 61116 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:09:02 +0000] "POST /api/v1/factors/backtest HTTP/1.1" 499 0 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:09:51 +0000] "GET / HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:09:51 +0000] "GET /assets/index-82se9_3v.js HTTP/1.1" 200 396807 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:09:51 +0000] "GET /assets/index-WX_Nm6Xc.css HTTP/1.1" 200 2931 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:10:17 +0000] "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1" 200 2050 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:11:35 +0000] "POST /api/v1/screener/run HTTP/1.1" 200 5795 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:13:05 +0000] "POST /api/v1/factors/score HTTP/1.1" 200 15099 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:13:39 +0000] "GET /api/v1/market/top-movers?type=stock&limit=5 HTTP/1.1" 200 439 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:14:24 +0000] "GET /api/v1/market/AAPL/quote HTTP/1.1" 502 142 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:16:31 +0000] "GET /api/v1/market/AAPL/quote HTTP/1.1" 200 267 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:17:26 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 200 288 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:18:40 +0000] "GET /api/v1/market/AAPL/kline?period=1d&start=2023-03-06&end=2026-03-06 HTTP/1.1" 200 87864 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:20:23 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 11727 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:22:18 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 36458 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:24:26 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 61116 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:24:51 +0000] "POST /api/v1/factors/backtest HTTP/1.1" 499 0 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:25:21 +0000] "GET / HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:25:21 +0000] "GET /assets/index-82se9_3v.js HTTP/1.1" 200 396807 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:25:21 +0000] "GET /assets/index-WX_Nm6Xc.css HTTP/1.1" 200 2931 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:26:42 +0000] "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1" 200 2050 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:28:23 +0000] "POST /api/v1/screener/run HTTP/1.1" 200 5789 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:29:22 +0000] "POST /api/v1/factors/score HTTP/1.1" 200 15089 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:29:51 +0000] "GET /api/v1/market/top-movers?type=stock&limit=5 HTTP/1.1" 200 439 "-" "curl/7.81.0" "-"
+backend-1  | INFO:     172.19.0.8:49342 - "POST /api/v1/screener/run HTTP/1.0" 200 OK
+backend-1  | INFO:     172.19.0.8:43008 - "POST /api/v1/factors/score HTTP/1.0" 200 OK
+backend-1  | INFO:     172.19.0.8:51822 - "GET /api/v1/market/top-movers?type=stock&limit=5 HTTP/1.0" 200 OK
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['AAPL']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | OpenBB fetch_ohlcv failed for AAPL, fallback to yfinance: 
+backend-1  | [Empty] -> No results found. Try adjusting the query parameters.
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['AAPL']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | INFO:     172.19.0.8:60764 - "GET /api/v1/market/AAPL/quote HTTP/1.0" 200 OK
+backend-1  | CoinGecko fetch failed: HTTPSConnectionPool(host='api.coingecko.com', port=443): Max retries exceeded with url: /api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true (Caused by ConnectTimeoutError(<HTTPSConnection(host='api.coingecko.com', port=443) at 0x7a806cb79490>, 'Connection to api.coingecko.com timed out. (connect timeout=5)'))
+backend-1  | CoinGecko fetch failed: HTTPSConnectionPool(host='api.coingecko.com', port=443): Max retries exceeded with url: /api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true (Caused by ConnectTimeoutError(<HTTPSConnection(host='api.coingecko.com', port=443) at 0x7a806cb7b250>, 'Connection to api.coingecko.com timed out. (connect timeout=5)'))
+backend-1  | CoinGecko fetch failed: HTTPSConnectionPool(host='api.coingecko.com', port=443): Max retries exceeded with url: /api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true (Caused by ConnectTimeoutError(<HTTPSConnection(host='api.coingecko.com', port=443) at 0x7a806cbc7190>, 'Connection to api.coingecko.com timed out. (connect timeout=5)'))
+backend-1  | INFO:     172.19.0.8:49890 - "GET /api/v1/market/BTC/quote HTTP/1.0" 200 OK
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['AAPL']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | OpenBB fetch_ohlcv failed for AAPL, fallback to yfinance: 
+backend-1  | [Empty] -> No results found. Try adjusting the query parameters.
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['AAPL']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | INFO:     172.19.0.8:32926 - "GET /api/v1/market/AAPL/kline?period=1d&start=2023-03-06&end=2026-03-06 HTTP/1.0" 200 OK
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['AAPL']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | OpenBB fetch_ohlcv failed for AAPL, fallback to yfinance: 
+backend-1  | [Empty] -> No results found. Try adjusting the query parameters.
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['AAPL']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | INFO:     172.19.0.8:51338 - "POST /api/v1/backtest/run HTTP/1.0" 200 OK
+backend-1  | OpenBB fetch_ohlcv failed for 600519.SH, fallback to yfinance: 
+backend-1  | [Error] -> 1 validations error(s)
+backend-1  | [Arg] provider -> input: akshare -> Input should be 'fmp', 'intrinio', 'polygon', 'tiingo' or 'yfinance'
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['600519.SS']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | INFO:     172.19.0.8:34428 - "POST /api/v1/backtest/run HTTP/1.0" 200 OK
+backend-1  | OpenBB fetch_ohlcv failed for 600519.SH, fallback to yfinance: 
+backend-1  | [Error] -> 1 validations error(s)
+backend-1  | [Arg] provider -> input: akshare -> Input should be 'fmp', 'intrinio', 'polygon', 'tiingo' or 'yfinance'
+backend-1  | 
+backend-1  | 1 Failed download:
+backend-1  | ['600519.SS']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+backend-1  | INFO:     172.19.0.8:34442 - "POST /api/v1/backtest/run HTTP/1.0" 200 OK
+backend-1  | INFO:     172.19.0.8:33364 - "POST /api/v1/factors/backtest HTTP/1.0" 200 OK
+backend-1  | INFO:     172.19.0.8:33368 - "POST /api/v1/factors/backtest HTTP/1.0" 200 OK
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:31:48 +0000] "GET /api/v1/market/AAPL/quote HTTP/1.1" 200 265 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:33:21 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 200 288 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:36:40 +0000] "GET /api/v1/market/AAPL/kline?period=1d&start=2023-03-06&end=2026-03-06 HTTP/1.1" 200 87864 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:40:13 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 11727 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:40:21 +0000] "POST /api/v1/backtest/run HTTP/1.1" 499 0 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:43:36 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 61047 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:44:05 +0000] "GET / HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:44:05 +0000] "GET /assets/index-82se9_3v.js HTTP/1.1" 200 396807 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:44:05 +0000] "GET /assets/index-WX_Nm6Xc.css HTTP/1.1" 200 2931 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:44:18 +0000] "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1" 200 2050 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:45:25 +0000] "POST /api/v1/screener/run HTTP/1.1" 200 5793 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:48:55 +0000] "POST /api/v1/factors/score HTTP/1.1" 200 15034 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:51:24 +0000] "GET /api/v1/market/top-movers?type=stock&limit=5 HTTP/1.1" 200 439 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:52:53 +0000] "GET /api/v1/market/AAPL/quote HTTP/1.1" 200 266 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:53:21 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 200 288 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:56:42 +0000] "GET /api/v1/market/AAPL/kline?period=1d&start=2023-03-06&end=2026-03-06 HTTP/1.1" 200 87862 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:58:47 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 11727 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:59:05 +0000] "POST /api/v1/backtest/run HTTP/1.1" 499 0 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:59:27 +0000] "GET / HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:59:27 +0000] "GET /assets/index-82se9_3v.js HTTP/1.1" 200 396807 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:15:59:27 +0000] "GET /assets/index-WX_Nm6Xc.css HTTP/1.1" 200 2931 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:00:22 +0000] "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1" 200 2050 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:00:58 +0000] "POST /api/v1/screener/run HTTP/1.1" 200 5795 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:01:45 +0000] "POST /api/v1/factors/score HTTP/1.1" 200 15051 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:01:50 +0000] "GET /api/v1/market/top-movers?type=stock&limit=5 HTTP/1.1" 200 435 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:03:52 +0000] "GET /api/v1/market/AAPL/quote HTTP/1.1" 502 142 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:07:14 +0000] "GET /api/v1/market/AAPL/quote HTTP/1.1" 200 266 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:08:36 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 200 288 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:10:50 +0000] "GET /api/v1/market/AAPL/kline?period=1d&start=2023-03-06&end=2026-03-06 HTTP/1.1" 200 87864 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:13:46 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 11727 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:15:23 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 36612 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:17:27 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 61047 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:22:27 +0000] "POST /api/v1/factors/backtest HTTP/1.1" 499 0 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:23:00 +0000] "GET / HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:23:00 +0000] "GET /assets/index-82se9_3v.js HTTP/1.1" 200 396807 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:23:00 +0000] "GET /assets/index-WX_Nm6Xc.css HTTP/1.1" 200 2931 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:23:36 +0000] "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1" 200 2050 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:25:18 +0000] "POST /api/v1/screener/run HTTP/1.1" 200 5792 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:28:35 +0000] "POST /api/v1/factors/score HTTP/1.1" 200 15028 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:28:39 +0000] "GET /api/v1/market/top-movers?type=stock&limit=5 HTTP/1.1" 200 439 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:30:26 +0000] "GET /api/v1/market/AAPL/quote HTTP/1.1" 200 266 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:30:49 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 200 288 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:33:33 +0000] "GET /api/v1/market/AAPL/kline?period=1d&start=2023-03-06&end=2026-03-06 HTTP/1.1" 200 87862 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:36:32 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 11727 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:37:01 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 36612 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:37:29 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 61047 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:41:30 +0000] "POST /api/v1/factors/backtest HTTP/1.1" 499 0 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:42:31 +0000] "GET / HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:42:31 +0000] "GET /assets/index-82se9_3v.js HTTP/1.1" 200 396807 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:42:31 +0000] "GET /assets/index-WX_Nm6Xc.css HTTP/1.1" 200 2931 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:43:38 +0000] "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1" 200 2050 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:45:42 +0000] "POST /api/v1/screener/run HTTP/1.1" 200 5787 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:48:18 +0000] "POST /api/v1/factors/score HTTP/1.1" 200 14995 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:48:21 +0000] "GET /api/v1/market/top-movers?type=stock&limit=5 HTTP/1.1" 200 435 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:49:31 +0000] "GET /api/v1/market/AAPL/quote HTTP/1.1" 200 266 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:51:09 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 200 288 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:53:33 +0000] "GET /api/v1/market/AAPL/kline?period=1d&start=2023-03-06&end=2026-03-06 HTTP/1.1" 200 87862 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:56:27 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 11727 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:57:09 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 36612 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:16:58:56 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 61047 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:01:56 +0000] "POST /api/v1/factors/backtest HTTP/1.1" 499 0 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:03:21 +0000] "GET / HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:03:21 +0000] "GET /assets/index-82se9_3v.js HTTP/1.1" 200 396807 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:03:21 +0000] "GET /assets/index-WX_Nm6Xc.css HTTP/1.1" 200 2931 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:03:26 +0000] "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1" 200 2050 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:03:43 +0000] "POST /api/v1/screener/run HTTP/1.1" 200 5795 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:04:01 +0000] "POST /api/v1/factors/score HTTP/1.1" 200 14986 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:04:04 +0000] "GET /api/v1/market/top-movers?type=stock&limit=5 HTTP/1.1" 200 433 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:04:35 +0000] "GET /api/v1/market/AAPL/quote HTTP/1.1" 200 268 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:04:51 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 200 302 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:05:23 +0000] "GET /api/v1/market/AAPL/kline?period=1d&start=2023-03-06&end=2026-03-06 HTTP/1.1" 200 87861 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:06:04 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 11727 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:06:07 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 36612 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:06:12 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 61047 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:06:16 +0000] "POST /api/v1/factors/backtest HTTP/1.1" 200 23395 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:06:20 +0000] "POST /api/v1/factors/backtest HTTP/1.1" 200 46068 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:14:30 +0000] "GET /market HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:14:30 +0000] "GET /chart HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:14:30 +0000] "GET /screener HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:14:30 +0000] "GET /factors HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:14:30 +0000] "GET /backtest HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:14:30 +0000] "GET /ai HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:15:11 +0000] "GET / HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:15:12 +0000] "GET /assets/index-82se9_3v.js HTTP/1.1" 200 396807 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:15:12 +0000] "GET /assets/index-WX_Nm6Xc.css HTTP/1.1" 200 2931 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:15:18 +0000] "GET /api/v1/screener/symbols?market=us&limit=20 HTTP/1.1" 200 2050 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:15:34 +0000] "POST /api/v1/screener/run HTTP/1.1" 200 5788 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:15:49 +0000] "POST /api/v1/factors/score HTTP/1.1" 200 15004 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:15:54 +0000] "GET /api/v1/market/top-movers?type=stock&limit=5 HTTP/1.1" 200 436 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:16:31 +0000] "GET /api/v1/market/AAPL/quote HTTP/1.1" 200 267 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:16:47 +0000] "GET /api/v1/market/BTC/quote HTTP/1.1" 200 302 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:17:17 +0000] "GET /api/v1/market/AAPL/kline?period=1d&start=2023-03-06&end=2026-03-06 HTTP/1.1" 200 87864 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:17:43 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 11727 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:17:46 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 36612 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:17:51 +0000] "POST /api/v1/backtest/run HTTP/1.1" 200 61047 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:17:51 +0000] "POST /api/v1/factors/backtest HTTP/1.1" 200 23394 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:17:51 +0000] "POST /api/v1/factors/backtest HTTP/1.1" 200 46067 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:18:05 +0000] "GET /market HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:18:05 +0000] "GET /chart HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:18:05 +0000] "GET /screener HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:18:05 +0000] "GET /factors HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:18:05 +0000] "GET /backtest HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"
+nginx-1    | 172.19.0.1 - - [06/Mar/2026:17:18:05 +0000] "GET /ai HTTP/1.1" 200 401 "-" "curl/7.81.0" "-"

@@ -5,6 +5,7 @@ type Props = {
   candles: CandlestickData[]
   showMA: boolean
   showRSI: boolean
+  height?: number
 }
 
 function calcMA(candles: CandlestickData[], window = 10): LineData[] {
@@ -39,17 +40,19 @@ function calcRSI(candles: CandlestickData[], period = 14): LineData[] {
   return out
 }
 
-export default function KlineChart({ candles, showMA, showRSI }: Props) {
+export default function KlineChart({ candles, showMA, showRSI, height = 420 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
+  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const maSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
   const rsiSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
+  const hasFittedRef = useRef(false)
 
   useEffect(() => {
     if (!containerRef.current) return
 
     const chart = createChart(containerRef.current, {
-      height: 420,
+      height,
       layout: {
         background: { color: 'transparent' },
         textColor: '#2f4c71',
@@ -70,11 +73,11 @@ export default function KlineChart({ candles, showMA, showRSI }: Props) {
       wickUpColor: '#1eaa7a',
       wickDownColor: '#d64545',
     })
-    candleSeries.setData(candles)
 
     const maSeries = chart.addLineSeries({ color: '#0f89c9', lineWidth: 2 })
     const rsiSeries = chart.addLineSeries({ color: '#f08326', lineWidth: 2 })
 
+    candleSeriesRef.current = candleSeries
     maSeriesRef.current = maSeries
     rsiSeriesRef.current = rsiSeries
     chartRef.current = chart
@@ -89,6 +92,23 @@ export default function KlineChart({ candles, showMA, showRSI }: Props) {
     return () => {
       window.removeEventListener('resize', onResize)
       chart.remove()
+      chartRef.current = null
+      candleSeriesRef.current = null
+      maSeriesRef.current = null
+      rsiSeriesRef.current = null
+      hasFittedRef.current = false
+    }
+  }, [height])
+
+  useEffect(() => {
+    if (!candleSeriesRef.current || !chartRef.current) return
+    candleSeriesRef.current.setData(candles)
+    if (candles.length > 0 && !hasFittedRef.current) {
+      chartRef.current.timeScale().fitContent()
+      hasFittedRef.current = true
+    }
+    if (candles.length === 0) {
+      hasFittedRef.current = false
     }
   }, [candles])
 

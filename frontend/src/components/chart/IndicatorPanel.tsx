@@ -3,7 +3,7 @@ type Props = {
   onToggle: (name: string) => void
 }
 
-const indicators = ['MA', 'MACD', 'RSI']
+const indicators = ['MA', 'RSI']
 
 export default function IndicatorPanel({ selected, onToggle }: Props) {
   return (

@@ -8,11 +8,62 @@ export type BacktestRequest = {
   start_date: string
   end_date: string
   initial_capital: number
+  sync_if_missing?: boolean
+}
+
+export type BacktestCurvePoint = {
+  date: string
+  value: number
+}
+
+export type BacktestTrade = {
+  date: string
+  symbol: string
+  action: string
+  price: number
+  shares: number
+  commission: number
+  pnl?: number
+}
+
+export type BacktestMetrics = {
+  total_return?: number
+  annual_return?: number
+  sharpe_ratio?: number
+  max_drawdown?: number
+  win_rate?: number
+  trade_count?: number
+}
+
+export type BacktestRunData = {
+  equity_curve: BacktestCurvePoint[]
+  trades: BacktestTrade[]
+  metrics: BacktestMetrics
+}
+
+export type BacktestRunMeta = {
+  ohlcv_source?: 'cache' | 'live' | 'mixed' | 'local'
+  stale?: boolean
+  as_of?: string | null
+  fetch_source?: string
+  source?: string
+  storage_source?: 'cache' | 'live' | 'mixed' | 'local'
+  sync_performed?: boolean
+  provider?: string
+  coverage_complete?: boolean
+}
+
+export type BacktestRunResponse = {
+  data: BacktestRunData | null
+  meta: BacktestRunMeta
 }
 
 export async function runBacktest(payload: BacktestRequest) {
   const resp = await client.post('/backtest/run', payload)
-  return resp.data?.data
+  return {
+    data: resp.data?.data ?? null,
+    meta: resp.data?.meta ?? {},
+  } as BacktestRunResponse
 }
 
 export type BacktestLabRequest = {

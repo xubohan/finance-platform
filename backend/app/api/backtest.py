@@ -7,15 +7,11 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 import pandas as pd
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.services.openbb_adapter import (
-    fetch_ohlcv,
-    fetch_stock_snapshot_with_meta,
-    fetch_stock_universe_total_with_meta,
-)
+from app.services.ohlcv_store import load_ohlcv_window
+from app.services.openbb_adapter import fetch_stock_snapshot_with_meta, fetch_stock_universe_total_with_meta
 from backtest.engine import BacktestEngine
 from backtest.strategies.ma_cross import MACrossStrategy
 from backtest.strategies.macd_signal import MACDSignalStrategy
@@ -34,6 +30,7 @@ class BacktestRequest(BaseModel):
     start_date: str
     end_date: str
     initial_capital: float = Field(1_000_000, gt=0)
+    sync_if_missing: bool = True
 
 
 class BacktestLabRequest(BaseModel):
@@ -88,66 +85,48 @@ def _build_backtest_summary(symbol: str, name: str, market: str, metrics: dict[s
     }
 
 
-async def _upsert_ohlcv_rows(
-    db: AsyncSession | None,
-    symbol: str,
-    asset_type: str,
-    rows: list[dict[str, Any]],
-) -> None:
-    """Persist latest live OHLCV rows for reproducibility."""
-    if db is None or not rows:
-        return
-    insert_stmt = text(
-        """
-        INSERT INTO ohlcv_daily(time, symbol, asset_type, open, high, low, close, volume)
-        VALUES (:time, :symbol, :asset_type, :open, :high, :low, :close, :volume)
-        ON CONFLICT (time, symbol, asset_type) DO UPDATE SET
-          open = EXCLUDED.open,
-          high = EXCLUDED.high,
-          low = EXCLUDED.low,
-          close = EXCLUDED.close,
-          volume = EXCLUDED.volume
-        """
-    )
-    await db.execute(insert_stmt, rows)
-    await db.commit()
+def _validate_date_range(start_date: str, end_date: str) -> None:
+    """Reject invalid backtest windows early."""
+    try:
+        start_ts = pd.Timestamp(start_date)
+        end_ts = pd.Timestamp(end_date)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=_error("INVALID_DATE_FORMAT", "start_date and end_date must be valid dates in YYYY-MM-DD format", {}),
+        ) from exc
+
+    if start_ts >= end_ts:
+        raise HTTPException(
+            status_code=400,
+            detail=_error("INVALID_DATE_RANGE", "start_date must be earlier than end_date", {}),
+        )
 
 
-async def _fetch_ohlcv_live(
+async def _load_backtest_ohlcv(
     db: AsyncSession | None,
     symbol: str,
     asset_type: str,
     start_date: str,
     end_date: str,
-) -> pd.DataFrame:
-    """Fetch live OHLCV and persist locally for reproducibility."""
-    latest_df = fetch_ohlcv(
+    sync_if_missing: bool = True,
+) -> tuple[Any, dict[str, Any]]:
+    """Load backtest OHLCV window from local store first, syncing when needed."""
+    return await load_ohlcv_window(
+        db=db,
         symbol=symbol,
+        asset_type=asset_type,
         start_date=start_date,
         end_date=end_date,
         interval="1d",
+        sync_if_missing=sync_if_missing,
     )
-    if not latest_df.empty:
-        payload = [
-            {
-                "time": row.time.to_pydatetime(),
-                "symbol": symbol,
-                "asset_type": asset_type,
-                "open": float(row.open),
-                "high": float(row.high),
-                "low": float(row.low),
-                "close": float(row.close),
-                "volume": float(row.volume),
-            }
-            for row in latest_df.itertuples(index=False)
-        ]
-        await _upsert_ohlcv_rows(db, symbol, asset_type, payload)
-    return latest_df
 
 
 @router.post("/run")
 async def run_backtest(payload: BacktestRequest, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     """Run strategy backtest and return equity curve/trades/metrics."""
+    _validate_date_range(payload.start_date, payload.end_date)
     try:
         strategy = _build_strategy(payload.strategy_name, payload.parameters)
     except Exception as exc:
@@ -158,13 +137,23 @@ async def run_backtest(payload: BacktestRequest, db: AsyncSession = Depends(get_
 
     symbol = payload.symbol.upper()
     db_session = db if isinstance(db, AsyncSession) else None
-    df = await _fetch_ohlcv_live(
+    df, ohlcv_meta = await _load_backtest_ohlcv(
         db=db_session,
         symbol=symbol,
         asset_type=payload.asset_type,
         start_date=payload.start_date,
         end_date=payload.end_date,
+        sync_if_missing=payload.sync_if_missing,
     )
+    if not payload.sync_if_missing and not bool(ohlcv_meta.get("coverage_complete")):
+        raise HTTPException(
+            status_code=409,
+            detail=_error(
+                "LOCAL_DATA_INCOMPLETE",
+                "Local history does not fully cover the requested backtest window; sync data first or enable auto sync.",
+                {"symbol": symbol, "start_date": payload.start_date, "end_date": payload.end_date},
+            ),
+        )
     if df.empty:
         raise HTTPException(
             status_code=404,
@@ -173,12 +162,26 @@ async def run_backtest(payload: BacktestRequest, db: AsyncSession = Depends(get_
 
     engine = BacktestEngine(strategy=strategy, initial_capital=payload.initial_capital)
     result = engine.run(df=df, symbol=symbol, asset_type=payload.asset_type)
-    return {"data": result, "meta": {"ohlcv_source": "live", "stale": False}}
+    used_local_only = ohlcv_meta.get("source") == "local" and not bool(ohlcv_meta.get("sync_performed"))
+    return {
+        "data": result,
+        "meta": {
+            "ohlcv_source": "local" if used_local_only else "live",
+            "storage_source": ohlcv_meta.get("source"),
+            "sync_performed": bool(ohlcv_meta.get("sync_performed")),
+            "stale": bool(ohlcv_meta.get("stale")),
+            "as_of": ohlcv_meta.get("as_of"),
+            "provider": ohlcv_meta.get("provider"),
+            "fetch_source": ohlcv_meta.get("fetch_source"),
+            "coverage_complete": bool(ohlcv_meta.get("coverage_complete")),
+        },
+    }
 
 
 @router.post("/lab")
 async def run_backtest_lab(payload: BacktestLabRequest, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     """Run batch backtest over latest market stock universe with pagination."""
+    _validate_date_range(payload.start_date, payload.end_date)
     try:
         strategy = _build_strategy(payload.strategy_name, payload.parameters)
     except Exception as exc:
@@ -207,6 +210,7 @@ async def run_backtest_lab(payload: BacktestLabRequest, db: AsyncSession = Depen
     db_session = db if isinstance(db, AsyncSession) else None
     ranked_rows: list[dict[str, Any]] = []
     live_ohlcv_symbols = 0
+    local_ohlcv_symbols = 0
     failed_ohlcv_symbols = 0
 
     for item in snapshot:
@@ -214,7 +218,7 @@ async def run_backtest_lab(payload: BacktestLabRequest, db: AsyncSession = Depen
         if not symbol:
             continue
 
-        df = await _fetch_ohlcv_live(
+        df, ohlcv_meta = await _load_backtest_ohlcv(
             db=db_session,
             symbol=symbol,
             asset_type="stock",
@@ -224,7 +228,10 @@ async def run_backtest_lab(payload: BacktestLabRequest, db: AsyncSession = Depen
         if df.empty:
             failed_ohlcv_symbols += 1
             continue
-        live_ohlcv_symbols += 1
+        if ohlcv_meta.get("source") == "local" and not bool(ohlcv_meta.get("sync_performed")):
+            local_ohlcv_symbols += 1
+        else:
+            live_ohlcv_symbols += 1
 
         try:
             result = engine.run(df=df, symbol=symbol, asset_type="stock")
@@ -270,7 +277,8 @@ async def run_backtest_lab(payload: BacktestLabRequest, db: AsyncSession = Depen
             "as_of": snapshot_meta.get("as_of"),
             "cache_age_sec": snapshot_meta.get("cache_age_sec"),
             "ohlcv_live_symbols": live_ohlcv_symbols,
+            "ohlcv_local_symbols": local_ohlcv_symbols,
             "ohlcv_failed_symbols": failed_ohlcv_symbols,
-            "ohlcv_local_fallback_symbols": 0,
+            "ohlcv_local_fallback_symbols": local_ohlcv_symbols,
         },
     }

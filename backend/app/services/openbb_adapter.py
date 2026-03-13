@@ -1288,12 +1288,12 @@ def _normalize_ohlcv_frame(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
     return df[["time", "open", "high", "low", "close", "volume"]]
 
 
-def fetch_ohlcv(
+def fetch_ohlcv_with_meta(
     symbol: str,
     start_date: str,
     end_date: str,
     interval: Literal["1d", "1W", "1M"] = "1d",
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Fetch OHLCV history for stocks or crypto and return standardized columns.
 
     Args:
@@ -1303,8 +1303,9 @@ def fetch_ohlcv(
         interval: "1d" | "1W" | "1M".
 
     Returns:
-        DataFrame with columns: [time(UTC), open, high, low, close, volume].
-        Returns empty DataFrame on failure.
+        Tuple:
+            - DataFrame with columns [time(UTC), open, high, low, close, volume].
+            - Metadata including source/provider/as_of/stale flags.
     """
     started = time.perf_counter()
     asset_type, provider = detect_provider(symbol)
@@ -1348,9 +1349,10 @@ def fetch_ohlcv(
                 )
             except Exception as final_exc:
                 logger.error("Stooq fallback failed for %s: %s", symbol, final_exc)
-                return pd.DataFrame()
+                return pd.DataFrame(), _snapshot_meta("live", False, None)
 
     out = _normalize_ohlcv_frame(df, symbol)
+    as_of = _utc_now() if not out.empty else None
     logger.info(
         "OHLCV fetch result symbol=%s provider=%s source=%s rows=%d elapsed_ms=%d",
         symbol.upper(),
@@ -1358,6 +1360,26 @@ def fetch_ohlcv(
         source,
         len(out),
         _elapsed_ms(started),
+    )
+    meta = _snapshot_meta("live", False, as_of)
+    meta["provider"] = provider
+    meta["fetch_source"] = source
+    meta["asset_type"] = asset_type
+    return out, meta
+
+
+def fetch_ohlcv(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    interval: Literal["1d", "1W", "1M"] = "1d",
+) -> pd.DataFrame:
+    """Backward-compatible OHLCV fetch helper returning only DataFrame."""
+    out, _ = fetch_ohlcv_with_meta(
+        symbol=symbol,
+        start_date=start_date,
+        end_date=end_date,
+        interval=interval,
     )
     return out
 

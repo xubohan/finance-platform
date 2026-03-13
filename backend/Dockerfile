@@ -18,7 +18,10 @@ RUN pip install --no-cache-dir \
     numpy==2.1.3 \
     requests==2.32.5 \
     yfinance==0.2.66 \
-    openbb==4.3.3
+    openbb==4.3.3 \
+    pytest==8.3.4 \
+    pytest-asyncio==0.24.0 \
+    httpx==0.28.1
 
 COPY app /app/app
 COPY backtest /app/backtest
