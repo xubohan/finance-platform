@@ -1,15 +1,33 @@
-import type { BacktestRunData, BacktestRunMeta } from '../../api/backtest'
+import { useEffect, useState } from 'react'
+
+import {
+  getBacktestStrategies,
+  type BacktestCompareRow,
+  type BacktestRunData,
+  type BacktestRunMeta,
+  type BacktestStrategyCatalogEntry,
+} from '../../api/backtest'
+import {
+  BACKTEST_STRATEGIES,
+  getFastLabel,
+  getOscillatorPeriodLabel,
+  getSlowLabel,
+  getThresholdLabels,
+  isFastSlowStrategy,
+  isOscillatorStrategy,
+  isPeriodMultiplierStrategy,
+  isThresholdStrategy,
+  type BacktestStrategyName,
+} from '../../utils/backtestStrategies'
 import { displayFixed, displayPercent, displayText } from '../../utils/display'
 import { formatAsOf } from '../../utils/time'
 import EquityCurve from '../backtest/EquityCurve'
 import DatePresetBar from './DatePresetBar'
 
-type StrategyName = 'ma_cross' | 'macd_signal' | 'rsi_reversal'
-
 type Props = {
   selectedSymbol: string
   selectedAssetType: string
-  strategyName: StrategyName
+  strategyName: BacktestStrategyName
   fast: number
   slow: number
   rsiPeriod: number
@@ -19,12 +37,20 @@ type Props = {
   backtestStartDate: string
   backtestEndDate: string
   syncIfMissing: boolean
+  backtestTradesPage: number
+  backtestTradesTotal: number
+  backtestTradesPageCount: number
   loadingBacktest: boolean
+  loadingCompare: boolean
   backtestError: string | null
+  compareError: string | null
+  isBacktestStale: boolean
+  isCompareStale: boolean
   backtestResult: BacktestRunData | null
   backtestMeta: BacktestRunMeta | null
+  compareRows: BacktestCompareRow[]
   trades: BacktestRunData['trades']
-  onStrategyChange: (strategy: StrategyName) => void
+  onStrategyChange: (strategy: BacktestStrategyName) => void
   onFastChange: (value: number) => void
   onSlowChange: (value: number) => void
   onRsiPeriodChange: (value: number) => void
@@ -34,12 +60,31 @@ type Props = {
   onBacktestStartDateChange: (value: string) => void
   onBacktestEndDateChange: (value: string) => void
   onSyncIfMissingChange: (value: boolean) => void
+  onBacktestTradesPageChange: (page: number) => void
   onRunBacktest: () => void
+  onRunCompare: () => void
   onPresetSelect: (preset: string) => void
   onExportBacktestJson: () => void
+  onExportCompareCsv: () => void
   onExportEquityCurve: () => void
   onExportTrades: () => void
 }
+
+function fallbackStrategyMode(name: BacktestStrategyName): BacktestStrategyCatalogEntry['parameter_mode'] {
+  if (isFastSlowStrategy(name)) return 'fast_slow'
+  if (isOscillatorStrategy(name)) return 'oscillator'
+  if (isThresholdStrategy(name)) return 'threshold'
+  if (isPeriodMultiplierStrategy(name)) return 'period_multiplier'
+  if (name === 'buy_hold') return 'none'
+  return 'special'
+}
+
+const FALLBACK_STRATEGY_CATALOG: BacktestStrategyCatalogEntry[] = BACKTEST_STRATEGIES.map((strategy) => ({
+  name: strategy.value,
+  label: strategy.label,
+  parameter_mode: fallbackStrategyMode(strategy.value),
+  summary: '',
+}))
 
 export default function BacktestPanel({
   selectedSymbol,
@@ -54,10 +99,18 @@ export default function BacktestPanel({
   backtestStartDate,
   backtestEndDate,
   syncIfMissing,
+  backtestTradesPage,
+  backtestTradesTotal,
+  backtestTradesPageCount,
   loadingBacktest,
+  loadingCompare,
   backtestError,
+  compareError,
+  isBacktestStale,
+  isCompareStale,
   backtestResult,
   backtestMeta,
+  compareRows,
   trades,
   onStrategyChange,
   onFastChange,
@@ -69,28 +122,59 @@ export default function BacktestPanel({
   onBacktestStartDateChange,
   onBacktestEndDateChange,
   onSyncIfMissingChange,
+  onBacktestTradesPageChange,
   onRunBacktest,
+  onRunCompare,
   onPresetSelect,
   onExportBacktestJson,
+  onExportCompareCsv,
   onExportEquityCurve,
   onExportTrades,
 }: Props) {
+  const [strategyCatalog, setStrategyCatalog] = useState<BacktestStrategyCatalogEntry[]>(FALLBACK_STRATEGY_CATALOG)
+  const [strategyCatalogError, setStrategyCatalogError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    void getBacktestStrategies()
+      .then((resp) => {
+        if (cancelled) return
+        if (resp.data.length > 0) {
+          setStrategyCatalog(resp.data)
+          setStrategyCatalogError(null)
+        }
+      })
+      .catch(() => {
+        if (cancelled) return
+        setStrategyCatalog(FALLBACK_STRATEGY_CATALOG)
+        setStrategyCatalogError('策略目录同步失败，已回退本地目录。')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const selectedStrategyMeta = strategyCatalog.find((item) => item.name === strategyName)
   return (
     <section className="workspace-panel">
       <div className="panel-head">
         <h3>单标的回测</h3>
-        <span>工作台默认围绕当前标的运行，不再把全市场扫描作为主入口</span>
+        <span>围绕当前标的运行，不再以全市场扫描为主入口</span>
       </div>
 
       <div className="backtest-form">
         <select
           className="text-input"
           value={strategyName}
-          onChange={(event) => onStrategyChange(event.target.value as StrategyName)}
+          onChange={(event) => onStrategyChange(event.target.value as BacktestStrategyName)}
         >
-          <option value="ma_cross">MA Cross</option>
-          <option value="macd_signal">MACD Signal</option>
-          <option value="rsi_reversal">RSI Reversal</option>
+          {strategyCatalog.map((strategy) => (
+            <option key={strategy.name} value={strategy.name}>
+              {strategy.label}
+            </option>
+          ))}
         </select>
         <input className="text-input" type="date" value={backtestStartDate} onChange={(event) => onBacktestStartDateChange(event.target.value)} />
         <input className="text-input" type="date" value={backtestEndDate} onChange={(event) => onBacktestEndDateChange(event.target.value)} />
@@ -117,22 +201,36 @@ export default function BacktestPanel({
         <input type="checkbox" checked={syncIfMissing} onChange={(event) => onSyncIfMissingChange(event.target.checked)} />
         <span>回测时允许自动补齐缺失历史</span>
       </label>
+      {strategyCatalogError ? <p className="panel-copy">{strategyCatalogError}</p> : null}
+      {selectedStrategyMeta?.summary ? <p className="panel-copy">说明: {selectedStrategyMeta.summary}</p> : null}
 
-      {strategyName === 'ma_cross' ? (
+      {isFastSlowStrategy(strategyName) ? (
         <div className="backtest-form">
-          <input className="text-input" type="number" value={fast} onChange={(event) => onFastChange(Number(event.target.value))} placeholder="Fast MA" />
-          <input className="text-input" type="number" value={slow} onChange={(event) => onSlowChange(Number(event.target.value))} placeholder="Slow MA" />
+          <input
+            className="text-input"
+            type="number"
+            value={fast}
+            onChange={(event) => onFastChange(Number(event.target.value))}
+            placeholder={getFastLabel(strategyName)}
+          />
+          <input
+            className="text-input"
+            type="number"
+            value={slow}
+            onChange={(event) => onSlowChange(Number(event.target.value))}
+            placeholder={getSlowLabel(strategyName)}
+          />
         </div>
       ) : null}
 
-      {strategyName === 'rsi_reversal' ? (
+      {isOscillatorStrategy(strategyName) ? (
         <div className="backtest-form">
           <input
             className="text-input"
             type="number"
             value={rsiPeriod}
             onChange={(event) => onRsiPeriodChange(Number(event.target.value))}
-            placeholder="RSI Period"
+            placeholder={getOscillatorPeriodLabel(strategyName)}
           />
           <input
             className="text-input"
@@ -151,6 +249,141 @@ export default function BacktestPanel({
         </div>
       ) : null}
 
+      {strategyName === 'cci_reversal' ? (
+        <div className="backtest-form">
+          <input
+            className="text-input"
+            type="number"
+            value={rsiPeriod}
+            onChange={(event) => onRsiPeriodChange(Number(event.target.value))}
+            placeholder="CCI Period"
+          />
+          <input
+            className="text-input"
+            type="number"
+            value={oversold}
+            onChange={(event) => onOversoldChange(Number(event.target.value))}
+            placeholder="Oversold"
+          />
+          <input
+            className="text-input"
+            type="number"
+            value={overbought}
+            onChange={(event) => onOverboughtChange(Number(event.target.value))}
+            placeholder="Overbought"
+          />
+        </div>
+      ) : null}
+
+      {strategyName === 'bollinger_reversion' ? (
+        <div className="backtest-form">
+          <input
+            className="text-input"
+            type="number"
+            min={5}
+            value={rsiPeriod}
+            onChange={(event) => onRsiPeriodChange(Number(event.target.value))}
+            placeholder="Band Period"
+          />
+          <input
+            className="text-input"
+            type="number"
+            min={1}
+            step={0.1}
+            value={oversold}
+            onChange={(event) => onOversoldChange(Number(event.target.value))}
+            placeholder="Std Dev"
+          />
+        </div>
+      ) : null}
+
+      {isPeriodMultiplierStrategy(strategyName) ? (
+        <div className="backtest-form">
+          <input
+            className="text-input"
+            type="number"
+            min={5}
+            value={rsiPeriod}
+            onChange={(event) => onRsiPeriodChange(Number(event.target.value))}
+            placeholder={strategyName === 'supertrend_follow' ? 'ATR Period' : 'Channel Period'}
+          />
+          <input
+            className="text-input"
+            type="number"
+            min={1}
+            step={0.1}
+            value={oversold}
+            onChange={(event) => onOversoldChange(Number(event.target.value))}
+            placeholder="Multiplier"
+          />
+        </div>
+      ) : null}
+
+      {strategyName === 'vwap_reversion' || strategyName === 'atr_breakout' ? (
+        <div className="backtest-form">
+          <input
+            className="text-input"
+            type="number"
+            min={5}
+            value={rsiPeriod}
+            onChange={(event) => onRsiPeriodChange(Number(event.target.value))}
+            placeholder={strategyName === 'vwap_reversion' ? 'VWAP Period' : 'ATR Period'}
+          />
+          <input
+            className="text-input"
+            type="number"
+            min={0.1}
+            step={0.1}
+            value={oversold}
+            onChange={(event) => onOversoldChange(Number(event.target.value))}
+            placeholder={strategyName === 'vwap_reversion' ? 'Deviation %' : 'Multiplier'}
+          />
+        </div>
+      ) : null}
+
+      {strategyName === 'donchian_breakout' ? (
+        <div className="backtest-form">
+          <input
+            className="text-input"
+            type="number"
+            min={5}
+            value={fast}
+            onChange={(event) => onFastChange(Number(event.target.value))}
+            placeholder="Breakout Lookback"
+          />
+          <input
+            className="text-input"
+            type="number"
+            min={2}
+            value={slow}
+            onChange={(event) => onSlowChange(Number(event.target.value))}
+            placeholder="Exit Lookback"
+          />
+        </div>
+      ) : null}
+
+      {isThresholdStrategy(strategyName) ? (
+        <div className="backtest-form">
+          <input
+            className="text-input"
+            type="number"
+            min={5}
+            value={rsiPeriod}
+            onChange={(event) => onRsiPeriodChange(Number(event.target.value))}
+            placeholder={getThresholdLabels(strategyName).period}
+          />
+          <input
+            className="text-input"
+            type="number"
+            min={1}
+            step={0.1}
+            value={oversold}
+            onChange={(event) => onOversoldChange(Number(event.target.value))}
+            placeholder={getThresholdLabels(strategyName).threshold}
+          />
+        </div>
+      ) : null}
+
       <p className="panel-copy">
         目标标的: {selectedSymbol} | 类型: {selectedAssetType.toUpperCase()} | 数据状态:{' '}
         {displayText(backtestMeta?.storage_source ?? backtestMeta?.ohlcv_source ?? backtestMeta?.source)}
@@ -162,18 +395,25 @@ export default function BacktestPanel({
         <p className="warn-text">当前本地历史不完整，需先落地本地历史，或重新开启自动补数。</p>
       ) : null}
       {backtestError ? <p className="warn-text">{backtestError}</p> : null}
+      {compareError ? <p className="warn-text">{compareError}</p> : null}
       <div className="form-row">
-        <button className="secondary-btn" type="button" onClick={onExportBacktestJson} disabled={!backtestResult}>
-          导出当前回测 JSON
+        <button className="secondary-btn" type="button" onClick={onExportBacktestJson} disabled={!backtestResult || isBacktestStale}>
+          导出回测JSON
         </button>
-        <button className="secondary-btn" type="button" onClick={onExportEquityCurve} disabled={!backtestResult?.equity_curve?.length}>
-          导出权益曲线 CSV
+        <button className="secondary-btn" type="button" onClick={onExportCompareCsv} disabled={compareRows.length === 0 || isCompareStale}>
+          对比CSV
         </button>
-        <button className="secondary-btn" type="button" onClick={onExportTrades} disabled={!backtestResult?.trades?.length}>
-          导出成交 CSV
+        <button className="secondary-btn" type="button" onClick={onExportEquityCurve} disabled={!backtestResult?.equity_curve?.length || isBacktestStale}>
+          导出权益CSV
+        </button>
+        <button className="secondary-btn" type="button" onClick={onExportTrades} disabled={!backtestResult?.trades?.length || isBacktestStale}>
+          导出成交CSV
         </button>
         <button className="primary-btn" type="button" onClick={onRunBacktest} disabled={loadingBacktest}>
           {loadingBacktest ? '回测中...' : '运行当前回测'}
+        </button>
+        <button className="secondary-btn" type="button" onClick={onRunCompare} disabled={loadingCompare}>
+          {loadingCompare ? '对比中...' : '对比'}
         </button>
       </div>
 
@@ -204,18 +444,73 @@ export default function BacktestPanel({
         </div>
       </div>
 
+      {compareRows.length > 0 ? (
+        <div className="trade-table-wrap">
+          <p className="panel-copy">对比表</p>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Strategy</th>
+                <th>Total Return</th>
+                <th>Sharpe</th>
+                <th>Max Drawdown</th>
+                <th>Trades</th>
+              </tr>
+            </thead>
+            <tbody>
+              {compareRows.map((row) => (
+                <tr key={row.strategy_name}>
+                  <td>{displayText(row.label)}</td>
+                  <td>{displayPercent(row.total_return, 2)}</td>
+                  <td>{displayFixed(row.sharpe_ratio, 2)}</td>
+                  <td>{displayPercent(row.max_drawdown, 2)}</td>
+                  <td>{displayFixed(row.trade_count, 0)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
       <div className="curve-wrap">
         {backtestResult?.equity_curve?.length ? (
           <EquityCurve points={backtestResult.equity_curve} height={320} />
         ) : (
           <div className="empty-state">
             <strong>还没有回测结果</strong>
-            <p>确认标的、区间和策略参数后，直接在当前页面运行单标的回测。</p>
+            <p>确认区间和参数后，直接在当前页运行单标的回测。</p>
           </div>
         )}
       </div>
 
       <div className="trade-table-wrap">
+        {backtestTradesTotal > 0 ? (
+          <div className="pagination-row">
+            <p className="panel-copy pagination-meta">
+              成交记录第 {backtestTradesPage} / {backtestTradesPageCount} 页，共 {backtestTradesTotal} 笔
+            </p>
+            {backtestTradesPageCount > 1 ? (
+              <div className="form-row">
+                <button
+                  className="secondary-btn"
+                  type="button"
+                  onClick={() => onBacktestTradesPageChange(backtestTradesPage - 1)}
+                  disabled={backtestTradesPage <= 1}
+                >
+                  上一页成交记录
+                </button>
+                <button
+                  className="secondary-btn"
+                  type="button"
+                  onClick={() => onBacktestTradesPageChange(backtestTradesPage + 1)}
+                  disabled={backtestTradesPage >= backtestTradesPageCount}
+                >
+                  下一页成交记录
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <table className="table">
           <thead>
             <tr>

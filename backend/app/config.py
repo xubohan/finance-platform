@@ -26,6 +26,8 @@ class Settings:
     )
     enable_research_apis: bool = _env_bool("ENABLE_RESEARCH_APIS", False)
     enable_ai_api: bool = _env_bool("ENABLE_AI_API", False)
+    observability_slow_request_ms: int = int(os.getenv("OBSERVABILITY_SLOW_REQUEST_MS", "1500"))
+    snapshot_daily_retention_days: int = int(os.getenv("SNAPSHOT_DAILY_RETENTION_DAYS", "45"))
 
 
 settings = Settings()

@@ -1,5 +1,6 @@
 import { startTransition, useEffect, useRef, useState } from 'react'
 
+import type { BacktestCompareRankingMetric } from '../api/backtest'
 import type { AssetType, MarketPeriod, SearchAsset, SearchAssetType } from '../api/market'
 import {
   createDefaultWorkspaceState,
@@ -8,6 +9,7 @@ import {
   persistWorkspaceState,
   readInitialWorkspaceState,
 } from '../utils/marketWorkspace'
+import type { BacktestStrategyName } from '../utils/backtestStrategies'
 import { daysAgo, toDateInputLocal, yearStart, yearsAgo } from '../utils/time'
 
 export function useWorkspaceStorage() {
@@ -26,7 +28,7 @@ export function useWorkspaceStorage() {
   const [chartEndDate, setChartEndDate] = useState(initialWorkspace.chartEndDate)
   const [selectedIndicators, setSelectedIndicators] = useState<string[]>(['MA'])
 
-  const [strategyName, setStrategyName] = useState<'ma_cross' | 'macd_signal' | 'rsi_reversal'>(initialWorkspace.strategyName)
+  const [strategyName, setStrategyName] = useState<BacktestStrategyName>(initialWorkspace.strategyName)
   const [fast, setFast] = useState(initialWorkspace.fast)
   const [slow, setSlow] = useState(initialWorkspace.slow)
   const [rsiPeriod, setRsiPeriod] = useState(initialWorkspace.rsiPeriod)
@@ -36,6 +38,11 @@ export function useWorkspaceStorage() {
   const [backtestStartDate, setBacktestStartDate] = useState(initialWorkspace.backtestStartDate)
   const [backtestEndDate, setBacktestEndDate] = useState(initialWorkspace.backtestEndDate)
   const [syncIfMissing, setSyncIfMissing] = useState(initialWorkspace.syncIfMissing)
+  const [backtestTradesPage, setBacktestTradesPage] = useState(initialWorkspace.backtestTradesPage)
+  const [compareStrategyNames, setCompareStrategyNames] = useState(initialWorkspace.compareStrategyNames)
+  const [compareRankingMetric, setCompareRankingMetric] = useState<BacktestCompareRankingMetric>(
+    initialWorkspace.compareRankingMetric,
+  )
 
   useEffect(() => {
     const payload = {
@@ -54,6 +61,9 @@ export function useWorkspaceStorage() {
       backtestStartDate,
       backtestEndDate,
       syncIfMissing,
+      backtestTradesPage,
+      compareStrategyNames,
+      compareRankingMetric,
     }
     try {
       persistWorkspaceState(payload)
@@ -76,6 +86,9 @@ export function useWorkspaceStorage() {
     slow,
     strategyName,
     syncIfMissing,
+    backtestTradesPage,
+    compareStrategyNames,
+    compareRankingMetric,
   ])
 
   const selectAsset = (asset: SearchAsset, inputOverride?: string) => {
@@ -130,9 +143,26 @@ export function useWorkspaceStorage() {
       setBacktestStartDate(next.backtestStartDate)
       setBacktestEndDate(next.backtestEndDate)
       setSyncIfMissing(next.syncIfMissing)
+      setBacktestTradesPage(next.backtestTradesPage)
+      setCompareStrategyNames(next.compareStrategyNames)
+      setCompareRankingMetric(next.compareRankingMetric)
       setSelectedIndicators(['MA'])
     })
     return next
+  }
+
+  const toggleCompareStrategy = (name: BacktestStrategyName) => {
+    setCompareStrategyNames((previous) =>
+      previous.includes(name)
+        ? previous.filter((item) => item !== name)
+        : previous.length >= 8
+          ? previous
+          : [...previous, name],
+    )
+  }
+
+  const replaceCompareStrategies = (names: BacktestStrategyName[]) => {
+    setCompareStrategyNames(Array.from(new Set(names)).slice(0, 8))
   }
 
   const toggleIndicator = (name: string) => {
@@ -230,6 +260,13 @@ export function useWorkspaceStorage() {
     setBacktestEndDate,
     syncIfMissing,
     setSyncIfMissing,
+    backtestTradesPage,
+    setBacktestTradesPage,
+    compareStrategyNames,
+    compareRankingMetric,
+    setCompareRankingMetric,
+    toggleCompareStrategy,
+    replaceCompareStrategies,
     selectAsset,
     applyInputAsset,
     selectMoverAsset,

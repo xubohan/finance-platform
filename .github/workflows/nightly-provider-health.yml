@@ -1,0 +1,35 @@
+name: Nightly Provider Health
+
+on:
+  schedule:
+    - cron: '30 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provider-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Docker versions
+        run: |
+          docker version
+          docker compose version
+
+      - name: Run nightly provider healthcheck
+        env:
+          FAIL_ON_DEGRADED: "1"
+        run: bash scripts/nightly_data_source_healthcheck.sh
+
+      - name: Upload provider health artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-provider-health
+          path: logs/maintenance/provider_healthcheck_*.json
+          if-no-files-found: warn

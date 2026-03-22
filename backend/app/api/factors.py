@@ -14,6 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.services.cache_maintenance import ensure_research_cache_tables
 from app.services.factor_engine import normalize_factor, score_factors
 from app.services.ohlcv_store import load_ohlcv_window
 from app.services.openbb_adapter import (
@@ -227,54 +228,6 @@ def _cache_key(payload: FactorBacktestRequest) -> str:
     return sha256(encoded).hexdigest()
 
 
-async def _ensure_local_cache_tables(db: AsyncSession) -> None:
-    await db.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS market_snapshot_daily (
-              trade_date DATE NOT NULL,
-              market VARCHAR(10) NOT NULL,
-              symbol VARCHAR(30) NOT NULL,
-              payload JSONB NOT NULL,
-              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-              PRIMARY KEY (trade_date, market, symbol)
-            )
-            """
-        )
-    )
-    await db.execute(
-        text(
-            """
-            CREATE INDEX IF NOT EXISTS idx_market_snapshot_daily_market_date
-            ON market_snapshot_daily(market, trade_date DESC)
-            """
-        )
-    )
-    await db.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS backtest_cache (
-              cache_key VARCHAR(128) PRIMARY KEY,
-              category VARCHAR(40) NOT NULL,
-              request_payload JSONB NOT NULL,
-              response_payload JSONB NOT NULL,
-              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-              expires_at TIMESTAMPTZ NOT NULL
-            )
-            """
-        )
-    )
-    await db.execute(
-        text(
-            """
-            CREATE INDEX IF NOT EXISTS idx_backtest_cache_expires_at
-            ON backtest_cache(expires_at)
-            """
-        )
-    )
-    await db.commit()
-
-
 async def _persist_snapshot_daily(
     db: AsyncSession,
     market: Literal["us", "cn"],
@@ -289,7 +242,7 @@ async def _persist_snapshot_daily(
     else:
         trade_date = datetime.now(timezone.utc).date()
 
-    await _ensure_local_cache_tables(db)
+    await ensure_research_cache_tables(db)
     stmt = text(
         """
         INSERT INTO market_snapshot_daily(trade_date, market, symbol, payload)
@@ -316,7 +269,7 @@ async def _persist_snapshot_daily(
 
 
 async def _read_cache(db: AsyncSession, cache_key: str) -> dict[str, Any] | None:
-    await _ensure_local_cache_tables(db)
+    await ensure_research_cache_tables(db)
     result = await db.execute(
         text(
             """
@@ -353,7 +306,7 @@ async def _write_cache(
     response_payload: dict[str, Any],
     ttl_seconds: int,
 ) -> None:
-    await _ensure_local_cache_tables(db)
+    await ensure_research_cache_tables(db)
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=max(1, ttl_seconds))
     await db.execute(
         text(

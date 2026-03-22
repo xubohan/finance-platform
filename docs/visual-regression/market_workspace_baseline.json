@@ -1,0 +1,27 @@
+{
+  "generated_at": "2026-03-13T19:28:27.279Z",
+  "viewport": {
+    "width": 1440,
+    "height": 2200
+  },
+  "sections": {
+    "workspace-overview": {
+      "file": "workspace-overview.png",
+      "sha256": "441e76834ffaffc994b10c61a43aacc4d2b059a666de81d74b4b49dc7c9a3fd0",
+      "width": 724,
+      "height": 409
+    },
+    "workspace-chart": {
+      "file": "workspace-chart.png",
+      "sha256": "c94b0af036f1a65c563db3956361da4d8485db8b59ffcd67d61af9fb91ba8f04",
+      "width": 724,
+      "height": 812
+    },
+    "workspace-backtest": {
+      "file": "workspace-backtest.png",
+      "sha256": "d3a441146f9c4affc646dde45ebfb5674fbe1978590bd46629ec1abd1e063cd7",
+      "width": 724,
+      "height": 1361
+    }
+  }
+}

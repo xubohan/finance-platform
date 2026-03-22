@@ -1,4 +1,6 @@
 import type { AssetType, MarketPeriod, SearchAsset, SearchAssetType } from '../api/market'
+import type { BacktestCompareRankingMetric } from '../api/backtest'
+import { BACKTEST_STRATEGY_VALUES, DEFAULT_COMPARE_STRATEGIES, type BacktestStrategyName } from './backtestStrategies'
 
 import { daysAgo, toDateInputLocal } from './time'
 
@@ -17,7 +19,15 @@ const cryptoSymbols = new Set(['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'DOGE']
 const VALID_ASSET_TYPES = new Set<AssetType>(['stock', 'crypto'])
 const VALID_SEARCH_SCOPES = new Set<SearchAssetType>(['all', 'stock', 'crypto'])
 const VALID_PERIODS = new Set<MarketPeriod>(['1d', '1W', '1M'])
-const VALID_STRATEGIES = new Set(['ma_cross', 'macd_signal', 'rsi_reversal'])
+const VALID_STRATEGIES = new Set<BacktestStrategyName>(BACKTEST_STRATEGY_VALUES)
+const VALID_COMPARE_RANKING_METRICS = new Set<BacktestCompareRankingMetric>([
+  'total_return',
+  'annual_return',
+  'sharpe_ratio',
+  'max_drawdown',
+  'win_rate',
+  'trade_count',
+])
 
 export type PersistedWorkspaceState = {
   selectedAsset?: SearchAsset
@@ -25,7 +35,7 @@ export type PersistedWorkspaceState = {
   period?: MarketPeriod
   chartStartDate?: string
   chartEndDate?: string
-  strategyName?: 'ma_cross' | 'macd_signal' | 'rsi_reversal'
+  strategyName?: BacktestStrategyName
   fast?: number
   slow?: number
   rsiPeriod?: number
@@ -35,6 +45,9 @@ export type PersistedWorkspaceState = {
   backtestStartDate?: string
   backtestEndDate?: string
   syncIfMissing?: boolean
+  backtestTradesPage?: number
+  compareStrategyNames?: BacktestStrategyName[]
+  compareRankingMetric?: BacktestCompareRankingMetric
 }
 
 export type WorkspaceState = ReturnType<typeof createDefaultWorkspaceState>
@@ -103,6 +116,9 @@ export function createDefaultWorkspaceState() {
     backtestStartDate: daysAgo(365),
     backtestEndDate: toDateInputLocal(new Date()),
     syncIfMissing: true,
+    backtestTradesPage: 1,
+    compareStrategyNames: [...DEFAULT_COMPARE_STRATEGIES],
+    compareRankingMetric: 'total_return' as const,
   }
 }
 
@@ -162,8 +178,8 @@ export function parseWorkspaceState(raw: string | null): Partial<PersistedWorksp
     const restoredFast = readFiniteNumber(parsed.fast, 1, 250)
     const restoredSlow = readFiniteNumber(parsed.slow, 2, 400)
     const restoredRsiPeriod = readFiniteNumber(parsed.rsiPeriod, 2, 100)
-    const restoredOversold = readFiniteNumber(parsed.oversold, 0, 100)
-    const restoredOverbought = readFiniteNumber(parsed.overbought, 0, 100)
+    const restoredOversold = readFiniteNumber(parsed.oversold, -1000, 1000)
+    const restoredOverbought = readFiniteNumber(parsed.overbought, -1000, 1000)
     const restoredCapital = readFiniteNumber(parsed.initialCapital, 1000, 1_000_000_000)
 
     if (restoredFast !== null) restored.fast = restoredFast
@@ -175,6 +191,27 @@ export function parseWorkspaceState(raw: string | null): Partial<PersistedWorksp
     if (isValidDateInput(parsed.backtestStartDate)) restored.backtestStartDate = parsed.backtestStartDate
     if (isValidDateInput(parsed.backtestEndDate)) restored.backtestEndDate = parsed.backtestEndDate
     if (typeof parsed.syncIfMissing === 'boolean') restored.syncIfMissing = parsed.syncIfMissing
+    const restoredBacktestTradesPage = readFiniteNumber(parsed.backtestTradesPage, 1, 999)
+    if (restoredBacktestTradesPage !== null) restored.backtestTradesPage = restoredBacktestTradesPage
+    if (
+      parsed.compareRankingMetric &&
+      VALID_COMPARE_RANKING_METRICS.has(parsed.compareRankingMetric)
+    ) {
+      restored.compareRankingMetric = parsed.compareRankingMetric
+    }
+    if (Array.isArray(parsed.compareStrategyNames)) {
+      const compareStrategyNames = Array.from(
+        new Set(
+          parsed.compareStrategyNames.filter(
+            (name): name is BacktestStrategyName =>
+              typeof name === 'string' && VALID_STRATEGIES.has(name as BacktestStrategyName),
+          ),
+        ),
+      ).slice(0, 8)
+      if (parsed.compareStrategyNames.length === 0 || compareStrategyNames.length > 0) {
+        restored.compareStrategyNames = compareStrategyNames
+      }
+    }
 
     return restored
   } catch {

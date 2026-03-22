@@ -64,14 +64,14 @@ curl_with_retry() {
   echo "$code"
 }
 
-echo "[1/6] Check root page"
+echo "[1/7] Check root page"
 ROOT_CODE="$(curl_with_retry "$ROOT_HTML" -L -D "$ROOT_HEADERS" "$BASE_URL/")"
 if [[ "$ROOT_CODE" != "200" ]]; then
   echo "Root page check failed: HTTP $ROOT_CODE"
   exit 1
 fi
 
-echo "[2/6] Check asset bundles"
+echo "[2/7] Check asset bundles"
 python3 - "$BASE_URL" "$ROOT_HTML" <<'PY'
 import re
 import subprocess
@@ -97,7 +97,7 @@ for path in asset_paths:
 print(f"Asset checks passed for {len(asset_paths)} files")
 PY
 
-echo "[3/6] Check market search and movers"
+echo "[3/7] Check market search and movers"
 SEARCH_JSON="$TMP_DIR/search.json"
 SEARCH_CODE="$(curl_with_retry "$SEARCH_JSON" "$BASE_URL/api/v1/market/search?q=AAPL&type=stock&limit=5")"
 if [[ "$SEARCH_CODE" != "200" ]]; then
@@ -123,7 +123,7 @@ assert movers.get("meta", {}).get("count") == len(movers.get("data", []))
 print("Market search and movers ok")
 PY
 
-echo "[4/6] Check quote, kline and local history status"
+echo "[4/7] Check quote, kline and local history status"
 QUOTE_JSON="$TMP_DIR/quote.json"
 QUOTE_CODE="$(curl_with_retry "$QUOTE_JSON" "$BASE_URL/api/v1/market/AAPL/quote")"
 if [[ "$QUOTE_CODE" != "200" ]]; then
@@ -159,7 +159,7 @@ assert status.get("data", {}).get("symbol") == "AAPL"
 print("Quote/Kline/history status ok")
 PY
 
-echo "[5/6] Check explicit history sync"
+echo "[5/7] Check explicit history sync"
 SYNC_JSON="$TMP_DIR/sync.json"
 SYNC_CODE="$(curl_with_retry "$SYNC_JSON" -X POST "$BASE_URL/api/v1/market/AAPL/sync" -H 'Content-Type: application/json' -d "{\"start_date\":\"$START_1Y\",\"end_date\":\"$TODAY\",\"period\":\"1d\"}")"
 if [[ "$SYNC_CODE" != "200" ]]; then
@@ -177,7 +177,7 @@ assert sync.get("data", {}).get("local_rows", 0) > 0
 print("History sync ok")
 PY
 
-echo "[6/6] Check backtest local-first behavior after sync"
+echo "[6/7] Check backtest local-first behavior after sync"
 BACKTEST_JSON="$TMP_DIR/backtest.json"
 BACKTEST_CODE="$(curl_with_retry "$BACKTEST_JSON" -X POST "$BASE_URL/api/v1/backtest/run" -H 'Content-Type: application/json' -d "{\"symbol\":\"AAPL\",\"asset_type\":\"stock\",\"strategy_name\":\"ma_cross\",\"parameters\":{\"fast\":5,\"slow\":20},\"start_date\":\"$START_1Y\",\"end_date\":\"$TODAY\",\"initial_capital\":1000000,\"sync_if_missing\":false}")"
 if [[ "$BACKTEST_CODE" != "200" ]]; then
@@ -196,6 +196,53 @@ assert meta.get("sync_performed") is False
 assert meta.get("coverage_complete") is True
 assert isinstance(result.get("data", {}).get("equity_curve"), list)
 print("Backtest local-first flow ok")
+PY
+
+echo "[7/7] Check runtime observability"
+OBS_JSON="$TMP_DIR/observability.json"
+OBS_CODE="$(curl_with_retry "$OBS_JSON" "$BASE_URL/api/v1/system/observability")"
+if [[ "$OBS_CODE" != "200" ]]; then
+  echo "Observability failed: HTTP $OBS_CODE"
+  cat "$OBS_JSON"
+  exit 1
+fi
+python3 - "$OBS_JSON" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], "r", encoding="utf-8"))
+data = payload.get("data", {})
+http = data.get("http", {})
+routes = http.get("routes", [])
+market = data.get("market", {})
+assert int(http.get("total_requests", 0)) > 0
+assert int(http.get("slow_request_threshold_ms", 0)) > 0
+assert isinstance(data.get("counters"), dict)
+assert isinstance(market.get("quotes", {}), dict)
+assert "crypto" in market.get("quotes", {})
+assert any(item.get("path") == "/api/v1/market/{symbol}/quote" for item in routes)
+print("Observability ok")
+PY
+
+CACHE_JSON="$TMP_DIR/cache_maintenance.json"
+CACHE_CODE="$(curl_with_retry "$CACHE_JSON" "$BASE_URL/api/v1/system/cache-maintenance")"
+if [[ "$CACHE_CODE" != "200" ]]; then
+  echo "Cache maintenance failed: HTTP $CACHE_CODE"
+  cat "$CACHE_JSON"
+  exit 1
+fi
+python3 - "$CACHE_JSON" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], "r", encoding="utf-8"))
+data = payload.get("data", {})
+snapshot = data.get("market_snapshot_daily", {})
+backtest = data.get("backtest_cache", {})
+assert "total_rows" in snapshot
+assert "purgeable_rows" in snapshot
+assert "expired_rows" in backtest
+print("Cache maintenance ok")
 PY
 
 echo "Runtime smoke passed."

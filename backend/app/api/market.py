@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.services.market_cache import cache_get_json, cache_set_json
+from app.services.observability import increment_counter
 from app.services.ohlcv_store import get_local_ohlcv_summary, load_ohlcv_window, read_local_ohlcv, sync_ohlcv_from_upstream
 from app.services.openbb_adapter import (
     detect_provider,
@@ -276,6 +277,7 @@ async def search_assets(
             allow_stale=True,
         )
         if not live_universe and type == "stock":
+            increment_counter("market.search.stock.upstream_failure")
             raise HTTPException(
                 status_code=502,
                 detail=_error("UPSTREAM_UNAVAILABLE", "Failed to fetch latest stock symbol universe", {}),
@@ -415,12 +417,14 @@ async def sync_history(
         interval=payload.period,
     )
     if synced_df.empty:
+        increment_counter("market.sync.failure")
         raise HTTPException(
             status_code=502,
             detail=_error("UPSTREAM_UNAVAILABLE", "Failed to sync latest kline data", {"symbol": normalized_symbol}),
         )
 
     summary = await get_local_ohlcv_summary(db, normalized_symbol, asset_type)
+    increment_counter("market.sync.success")
     return {
         "data": {
             "symbol": normalized_symbol,
@@ -471,6 +475,7 @@ async def get_kline(
         sync_if_missing=True,
     )
     if latest_df.empty:
+        increment_counter(f"market.kline.{asset_type}.upstream_failure")
         raise HTTPException(
             status_code=502,
             detail=_error("UPSTREAM_UNAVAILABLE", "Failed to fetch latest kline data", {"symbol": normalized_symbol}),
@@ -520,6 +525,7 @@ async def get_quote(symbol: str, db: AsyncSession = Depends(get_db)) -> dict[str
     if asset_type == "crypto":
         quote = _fetch_crypto_quote_live(normalized_symbol)
         if isinstance(quote, dict):
+            increment_counter("market.quote.crypto.live_success")
             normalized_quote = {
                 "symbol": normalized_symbol,
                 "asset_type": "crypto",
@@ -544,6 +550,9 @@ async def get_quote(symbol: str, db: AsyncSession = Depends(get_db)) -> dict[str
         cached_quote, stale = _read_crypto_quote_cache(normalized_symbol, allow_stale=True)
         if isinstance(cached_quote, dict) and cached_quote.get("price") is not None:
             cached_as_of = str(cached_quote.get("as_of") or "")
+            increment_counter("market.quote.crypto.cache_fallback")
+            if stale:
+                increment_counter("market.quote.crypto.stale_cache_fallback")
             return {
                 "data": {
                     "symbol": normalized_symbol,
@@ -571,6 +580,7 @@ async def get_quote(symbol: str, db: AsyncSession = Depends(get_db)) -> dict[str
             interval="1d",
         )
         if not fallback_df.empty:
+            increment_counter("market.quote.crypto.ohlcv_fallback")
             latest = float(fallback_df.iloc[-1]["close"])
             prev = float(fallback_df.iloc[-2]["close"]) if len(fallback_df) > 1 else latest
             change_pct = ((latest - prev) / prev * 100) if prev else 0
@@ -596,6 +606,7 @@ async def get_quote(symbol: str, db: AsyncSession = Depends(get_db)) -> dict[str
                 },
             }
 
+        increment_counter("market.quote.crypto.upstream_failure")
         raise HTTPException(
             status_code=502,
             detail=_error("UPSTREAM_UNAVAILABLE", "Unable to fetch realtime price", {"symbol": normalized_symbol}),
@@ -607,10 +618,18 @@ async def get_quote(symbol: str, db: AsyncSession = Depends(get_db)) -> dict[str
         end_date=date.today().strftime("%Y-%m-%d"),
     )
     if latest_df.empty:
+        increment_counter("market.quote.stock.upstream_failure")
         raise HTTPException(
             status_code=502,
             detail=_error("UPSTREAM_UNAVAILABLE", "Failed to fetch latest quote data", {"symbol": normalized_symbol}),
         )
+
+    if latest_meta.get("source") == "local":
+        increment_counter("market.quote.stock.local_success")
+    elif latest_meta.get("sync_performed"):
+        increment_counter("market.quote.stock.synced_success")
+    else:
+        increment_counter("market.quote.stock.live_success")
 
     latest = float(latest_df.iloc[-1]["close"])
     prev = float(latest_df.iloc[-2]["close"]) if len(latest_df) > 1 else latest
@@ -662,6 +681,7 @@ async def get_summary(symbol: str, db: AsyncSession = Depends(get_db)) -> dict[s
         detail = exc.detail if isinstance(exc.detail, dict) else {}
         error_block = detail.get("error", {}) if isinstance(detail, dict) else {}
         quote_error = error_block.get("message") if isinstance(error_block, dict) else None
+        increment_counter("market.summary.quote_partial_error")
 
     return {
         "data": {
@@ -762,6 +782,7 @@ async def top_movers(
             allow_stale=allow_stale,
         )
         if not snapshot:
+            increment_counter("market.movers.stock.failure")
             raise HTTPException(
                 status_code=502,
                 detail=_error("UPSTREAM_UNAVAILABLE", "Failed to fetch latest stock movers", {}),
@@ -776,6 +797,7 @@ async def top_movers(
             }
             for row in stock_rows[:limit]
         ]
+        increment_counter("market.movers.stock.success")
         return {
             "data": data,
             "meta": {
@@ -792,6 +814,7 @@ async def top_movers(
     tracked = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "AVAX", "DOGE", "DOT"]
     quotes = fetch_crypto_realtime_price(tracked)
     if not quotes:
+        increment_counter("market.movers.crypto.failure")
         raise HTTPException(
             status_code=502,
             detail=_error("UPSTREAM_UNAVAILABLE", "Failed to fetch latest crypto movers", {}),
@@ -806,6 +829,7 @@ async def top_movers(
     ]
     data.sort(key=lambda r: r["change_pct"], reverse=True)
 
+    increment_counter("market.movers.crypto.success")
     return {
         "data": data[:limit],
         "meta": {

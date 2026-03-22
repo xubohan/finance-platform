@@ -1,0 +1,14 @@
+{
+  "created_at": "20260313T182639Z",
+  "git_head": "d4979b5bbb11e7753a1d81d7d6cfde106a2d0449",
+  "images": {
+    "backend": {
+      "name": "finance-plat-backend:latest",
+      "id": "sha256:c1ef5c472cc2ec2aa0b06bdc737bd681491ed7276c516956de824e83fdb46d25"
+    },
+    "frontend": {
+      "name": "finance-plat-frontend:latest",
+      "id": "sha256:114790527979c1cb35233215f004564ab6bab552311f6b7fb98e0bc3d55d1a1c"
+    }
+  }
+}

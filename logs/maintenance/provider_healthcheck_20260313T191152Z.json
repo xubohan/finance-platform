@@ -1,0 +1,76 @@
+{
+  "summary": {
+    "status": "error",
+    "total_checks": 5,
+    "ok_checks": 3,
+    "degraded_checks": 1,
+    "error_checks": 1,
+    "generated_at": "2026-03-13T19:12:00.273676+00:00"
+  },
+  "checks": [
+    {
+      "status": "ok",
+      "details": {
+        "market": "us",
+        "rows": 20,
+        "source": "live",
+        "stale": false,
+        "as_of": "2026-03-13T19:12:03.986397+00:00",
+        "cache_age_sec": 0
+      },
+      "name": "stock_snapshot_us",
+      "checked_at": "2026-03-13T19:12:00.273684+00:00",
+      "latency_ms": 3714
+    },
+    {
+      "status": "ok",
+      "details": {
+        "market": "us",
+        "rows": 20,
+        "source": "live",
+        "stale": false,
+        "as_of": "2026-03-13T19:12:07.340946+00:00",
+        "cache_age_sec": 0
+      },
+      "name": "stock_symbols_us",
+      "checked_at": "2026-03-13T19:12:03.988525+00:00",
+      "latency_ms": 3353
+    },
+    {
+      "status": "ok",
+      "details": {
+        "symbol": "AAPL",
+        "rows": 32,
+        "provider": "yfinance",
+        "fetch_source": "openbb",
+        "as_of": "2026-03-13T19:12:08.278736+00:00"
+      },
+      "name": "stock_ohlcv_aapl",
+      "checked_at": "2026-03-13T19:12:07.342414+00:00",
+      "latency_ms": 936
+    },
+    {
+      "status": "error",
+      "details": {
+        "symbol": "BTC",
+        "price": null
+      },
+      "name": "crypto_quote_btc",
+      "checked_at": "2026-03-13T19:12:08.278778+00:00",
+      "latency_ms": 5020
+    },
+    {
+      "status": "degraded",
+      "details": {
+        "symbol": "BTC",
+        "rows": 46,
+        "provider": "coinbase",
+        "fetch_source": "yfinance",
+        "as_of": "2026-03-13T19:12:14.206440+00:00"
+      },
+      "name": "crypto_ohlcv_btc",
+      "checked_at": "2026-03-13T19:12:13.299036+00:00",
+      "latency_ms": 907
+    }
+  ]
+}

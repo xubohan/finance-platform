@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import time
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings, settings
+from app.services.observability import configure_runtime_observability, record_http_request
 
 
 def create_app(runtime_settings: Settings | None = None) -> FastAPI:
     """Create FastAPI app with optional research and AI surfaces."""
     cfg = runtime_settings or settings
+    configure_runtime_observability(slow_request_threshold_ms=cfg.observability_slow_request_ms)
     application = FastAPI(title="Market Workspace API", version="0.2.0")
+    application.state.settings = cfg
     application.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -27,11 +32,31 @@ def create_app(runtime_settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    @application.middleware("http")
+    async def track_runtime_observability(request, call_next):
+        started = time.perf_counter()
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        finally:
+            route = request.scope.get("route")
+            route_path = getattr(route, "path", None) or request.url.path
+            record_http_request(
+                method=request.method,
+                path=route_path,
+                status_code=status_code,
+                duration_ms=(time.perf_counter() - started) * 1000,
+            )
+
     from app.api.backtest import router as backtest_router
     from app.api.market import router as market_router
+    from app.api.system import router as system_router
 
     application.include_router(market_router, prefix="/api/v1/market", tags=["market"])
     application.include_router(backtest_router, prefix="/api/v1/backtest", tags=["backtest"])
+    application.include_router(system_router, prefix="/api/v1/system", tags=["system"])
 
     if cfg.enable_research_apis:
         from app.api.factors import router as factors_router

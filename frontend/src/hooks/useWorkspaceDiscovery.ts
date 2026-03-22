@@ -9,7 +9,15 @@ import {
   type TopMoversMeta,
   type TopMoverRow,
 } from '../api/market'
-import { getHealth, type HealthResponse } from '../api/system'
+import {
+  getCacheMaintenance,
+  getHealth,
+  getObservability,
+  type CacheMaintenanceResponse,
+  type HealthResponse,
+  type ObservabilityResponse,
+} from '../api/system'
+import { recordFrontendMetric } from '../utils/runtimePerformance'
 
 export function useWorkspaceDiscovery(searchInput: string, searchScope: SearchAssetType) {
   const deferredSearch = useDeferredValue(searchInput.trim())
@@ -26,6 +34,10 @@ export function useWorkspaceDiscovery(searchInput: string, searchScope: SearchAs
 
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [healthError, setHealthError] = useState<string | null>(null)
+  const [observability, setObservability] = useState<ObservabilityResponse | null>(null)
+  const [observabilityError, setObservabilityError] = useState<string | null>(null)
+  const [cacheMaintenance, setCacheMaintenance] = useState<CacheMaintenanceResponse | null>(null)
+  const [cacheMaintenanceError, setCacheMaintenanceError] = useState<string | null>(null)
 
   useEffect(() => {
     if (deferredSearch.length < 1) {
@@ -39,14 +51,17 @@ export function useWorkspaceDiscovery(searchInput: string, searchScope: SearchAs
     const loadSearch = async () => {
       setSearchLoading(true)
       setSearchError(null)
+      const started = performance.now()
       try {
         const resp = await searchAssets(deferredSearch, searchScope, 8)
         if (!active) return
         setSearchResults(resp.data)
+        recordFrontendMetric('workspace.search', performance.now() - started, { category: 'interaction' })
       } catch (error) {
         if (!active) return
         setSearchResults([])
         setSearchError(extractApiError(error, '搜索标的失败'))
+        recordFrontendMetric('workspace.search', performance.now() - started, { category: 'interaction', status: 'error' })
       } finally {
         if (active) {
           setSearchLoading(false)
@@ -66,6 +81,7 @@ export function useWorkspaceDiscovery(searchInput: string, searchScope: SearchAs
 
     const loadMovers = async () => {
       setMoversError(null)
+      const started = performance.now()
       try {
         const [stocks, cryptos] = await Promise.all([getTopMovers('stock', 6), getTopMovers('crypto', 6)])
         if (!active) return
@@ -73,11 +89,13 @@ export function useWorkspaceDiscovery(searchInput: string, searchScope: SearchAs
         setCryptoMovers(cryptos.data)
         setStockMoversMeta(stocks.meta ?? null)
         setCryptoMoversMeta(cryptos.meta ?? null)
+        recordFrontendMetric('workspace.movers', performance.now() - started, { category: 'network' })
       } catch (error) {
         if (!active) return
         setStockMoversMeta(null)
         setCryptoMoversMeta(null)
         setMoversError(extractApiError(error, '加载市场动量失败'))
+        recordFrontendMetric('workspace.movers', performance.now() - started, { category: 'network', status: 'error' })
       }
     }
 
@@ -91,23 +109,57 @@ export function useWorkspaceDiscovery(searchInput: string, searchScope: SearchAs
   useEffect(() => {
     let active = true
 
-    const loadHealth = async () => {
-      setHealthError(null)
-      try {
-        const resp = await getHealth()
-        if (!active) return
-        setHealth(resp)
-      } catch (error) {
-        if (!active) return
+    const loadRuntimeState = async () => {
+      const started = performance.now()
+      const [healthResp, observabilityResp, cacheMaintenanceResp] = await Promise.allSettled([
+        getHealth(),
+        getObservability(),
+        getCacheMaintenance(),
+      ])
+      if (!active) return
+
+      if (healthResp.status === 'fulfilled') {
+        setHealth(healthResp.value)
+        setHealthError(null)
+      } else {
         setHealth(null)
-        setHealthError(extractApiError(error, '加载运行模式失败'))
+        setHealthError(extractApiError(healthResp.reason, '加载运行模式失败'))
       }
+
+      if (observabilityResp.status === 'fulfilled') {
+        setObservability(observabilityResp.value)
+        setObservabilityError(null)
+      } else {
+        setObservability(null)
+        setObservabilityError(extractApiError(observabilityResp.reason, '加载运行观测失败'))
+      }
+
+      if (cacheMaintenanceResp.status === 'fulfilled') {
+        setCacheMaintenance(cacheMaintenanceResp.value)
+        setCacheMaintenanceError(null)
+      } else {
+        setCacheMaintenance(null)
+        setCacheMaintenanceError(extractApiError(cacheMaintenanceResp.reason, '加载缓存维护状态失败'))
+      }
+
+      const hasError =
+        healthResp.status !== 'fulfilled' ||
+        observabilityResp.status !== 'fulfilled' ||
+        cacheMaintenanceResp.status !== 'fulfilled'
+      recordFrontendMetric('workspace.runtimeState', performance.now() - started, {
+        category: 'network',
+        status: hasError ? 'error' : 'success',
+      })
     }
 
-    void loadHealth()
+    void loadRuntimeState()
+    const timer = window.setInterval(() => {
+      void loadRuntimeState()
+    }, 30000)
 
     return () => {
       active = false
+      window.clearInterval(timer)
     }
   }, [])
 
@@ -129,5 +181,9 @@ export function useWorkspaceDiscovery(searchInput: string, searchScope: SearchAs
     moversError,
     health,
     healthError,
+    observability,
+    observabilityError,
+    cacheMaintenance,
+    cacheMaintenanceError,
   }
 }

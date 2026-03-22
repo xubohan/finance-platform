@@ -1,6 +1,8 @@
 import { createChart, type IChartApi, type ISeriesApi, type LineData } from 'lightweight-charts'
 import { useEffect, useRef } from 'react'
 
+import { recordFrontendMetric } from '../../utils/runtimePerformance'
+
 type Point = {
   date: string
   value: number
@@ -20,6 +22,7 @@ export default function EquityCurve({ points, height = 280 }: Props) {
   useEffect(() => {
     if (!ref.current) return
 
+    const started = performance.now()
     const chart = createChart(ref.current, {
       height,
       layout: { background: { color: 'transparent' }, textColor: '#2f4c71' },
@@ -32,6 +35,7 @@ export default function EquityCurve({ points, height = 280 }: Props) {
     const line = chart.addLineSeries({ color: '#0f89c9', lineWidth: 2 })
     chartRef.current = chart
     lineRef.current = line
+    recordFrontendMetric('chart.equity.init', performance.now() - started, { category: 'render' })
     const onResize = () => {
       if (!ref.current) return
       chart.applyOptions({ width: ref.current.clientWidth })
@@ -50,6 +54,7 @@ export default function EquityCurve({ points, height = 280 }: Props) {
 
   useEffect(() => {
     if (!lineRef.current) return
+    const started = performance.now()
     const lineData: LineData[] = points.map((p) => ({
       time: p.date,
       value: p.value,
@@ -62,6 +67,7 @@ export default function EquityCurve({ points, height = 280 }: Props) {
     if (lineData.length === 0) {
       hasFittedRef.current = false
     }
+    recordFrontendMetric('chart.equity.render', performance.now() - started, { category: 'render' })
   }, [points])
 
   return <div ref={ref} style={{ width: '100%' }} />

@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend Tests And Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend tests
+        run: npm test
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Enforce frontend performance budget
+        run: npm run check:performance
+
+  runtime-validation:
+    name: Runtime Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Docker versions
+        run: |
+          docker version
+          docker compose version
+
+      - name: Run workspace validation
+        env:
+          BASE_URL: http://127.0.0.1
+          CURL_RETRY_ATTEMPTS: "5"
+          CURL_RETRY_DELAY_SECONDS: "3"
+        run: bash scripts/run_workspace_validation.sh
+
+      - name: Collect compose diagnostics
+        if: always()
+        run: |
+          mkdir -p /tmp/finance-plat-ci
+          docker compose ps > /tmp/finance-plat-ci/compose-ps.txt || true
+          docker compose logs --tail=300 backend nginx > /tmp/finance-plat-ci/backend-nginx.log || true
+          docker compose logs --tail=200 frontend > /tmp/finance-plat-ci/frontend.log || true
+
+      - name: Upload runtime diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-validation-diagnostics
+          path: /tmp/finance-plat-ci
+          if-no-files-found: ignore
+
+      - name: Tear down compose stack
+        if: always()
+        run: docker compose down -v

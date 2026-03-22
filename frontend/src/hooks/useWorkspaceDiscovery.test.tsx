@@ -6,6 +6,8 @@ import { useWorkspaceDiscovery } from './useWorkspaceDiscovery'
 const mockSearchAssets = vi.fn()
 const mockGetTopMovers = vi.fn()
 const mockGetHealth = vi.fn()
+const mockGetObservability = vi.fn()
+const mockGetCacheMaintenance = vi.fn()
 
 vi.mock('../api/market', () => ({
   searchAssets: (...args: unknown[]) => mockSearchAssets(...args),
@@ -14,6 +16,8 @@ vi.mock('../api/market', () => ({
 
 vi.mock('../api/system', () => ({
   getHealth: (...args: unknown[]) => mockGetHealth(...args),
+  getObservability: (...args: unknown[]) => mockGetObservability(...args),
+  getCacheMaintenance: (...args: unknown[]) => mockGetCacheMaintenance(...args),
 }))
 
 describe('useWorkspaceDiscovery', () => {
@@ -22,6 +26,15 @@ describe('useWorkspaceDiscovery', () => {
     mockSearchAssets.mockResolvedValue({ data: [], meta: {} })
     mockGetTopMovers.mockResolvedValue({ data: [], meta: {} })
     mockGetHealth.mockResolvedValue({ status: 'ok', research_apis: false, ai_api: false })
+    mockGetObservability.mockResolvedValue({
+      uptime_sec: 120,
+      http: { total_requests: 4, status_buckets: { '2xx': 4, '4xx': 0, '5xx': 0 }, routes: [], failing_routes: [] },
+      counters: { 'market.quote.crypto.live_success': 1 },
+    })
+    mockGetCacheMaintenance.mockResolvedValue({
+      market_snapshot_daily: { total_rows: 20, purgeable_rows: 2, retention_days: 45 },
+      backtest_cache: { total_rows: 5, expired_rows: 1 },
+    })
   })
 
   it('loads movers and health state on mount', async () => {
@@ -37,6 +50,8 @@ describe('useWorkspaceDiscovery', () => {
       expect(result.current.stockMoversMeta?.source).toBe('cache')
       expect(result.current.cryptoMoversMeta?.source).toBe('live')
       expect(result.current.health?.status).toBe('ok')
+      expect(result.current.observability?.http?.total_requests).toBe(4)
+      expect(result.current.cacheMaintenance?.market_snapshot_daily?.purgeable_rows).toBe(2)
     })
   })
 

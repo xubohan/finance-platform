@@ -1,6 +1,8 @@
 import { createChart, type CandlestickData, type IChartApi, type ISeriesApi, type LineData } from 'lightweight-charts'
 import { useEffect, useRef } from 'react'
 
+import { recordFrontendMetric } from '../../utils/runtimePerformance'
+
 type Props = {
   candles: CandlestickData[]
   showMA: boolean
@@ -51,6 +53,7 @@ export default function KlineChart({ candles, showMA, showRSI, height = 420 }: P
   useEffect(() => {
     if (!containerRef.current) return
 
+    const started = performance.now()
     const chart = createChart(containerRef.current, {
       height,
       layout: {
@@ -64,6 +67,8 @@ export default function KlineChart({ candles, showMA, showRSI, height = 420 }: P
       rightPriceScale: { borderColor: 'rgba(47, 76, 113, 0.15)' },
       timeScale: { borderColor: 'rgba(47, 76, 113, 0.15)' },
     })
+
+    recordFrontendMetric('chart.kline.init', performance.now() - started, { category: 'render' })
 
     const candleSeries = chart.addCandlestickSeries({
       upColor: '#1eaa7a',
@@ -102,6 +107,7 @@ export default function KlineChart({ candles, showMA, showRSI, height = 420 }: P
 
   useEffect(() => {
     if (!candleSeriesRef.current || !chartRef.current) return
+    const started = performance.now()
     candleSeriesRef.current.setData(candles)
     if (candles.length > 0 && !hasFittedRef.current) {
       chartRef.current.timeScale().fitContent()
@@ -110,6 +116,7 @@ export default function KlineChart({ candles, showMA, showRSI, height = 420 }: P
     if (candles.length === 0) {
       hasFittedRef.current = false
     }
+    recordFrontendMetric('chart.kline.render', performance.now() - started, { category: 'render' })
   }, [candles])
 
   useEffect(() => {

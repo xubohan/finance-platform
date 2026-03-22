@@ -14,6 +14,7 @@ import {
   type QuoteResponse,
   type SearchAsset,
 } from '../api/market'
+import { recordFrontendMetric } from '../utils/runtimePerformance'
 
 type MarketMeta = {
   quote?: QuoteResponse['meta']
@@ -57,6 +58,8 @@ export function useAssetMarketData({ selectedAsset, period, chartStartDate, char
       setLoadingQuote(true)
       setLoadingHistory(true)
       setHistoryError(null)
+      const started = performance.now()
+      let failed = false
       try {
         const resp = await getMarketSummary(selectedAsset.symbol)
         if (!active) return
@@ -66,12 +69,17 @@ export function useAssetMarketData({ selectedAsset, period, chartStartDate, char
         setQuoteError(resp.meta?.quote_error ?? null)
       } catch (error) {
         if (!active) return
+        failed = true
         setQuote(null)
         setQuoteError(extractApiError(error, '加载报价失败'))
         setHistoryStatus(null)
         setHistoryError(extractApiError(error, '加载本地历史状态失败'))
+        recordFrontendMetric('market.summary.load', performance.now() - started, { category: 'network', status: 'error' })
       } finally {
         if (active) {
+          if (!failed) {
+            recordFrontendMetric('market.summary.load', performance.now() - started, { category: 'network' })
+          }
           setLoadingQuote(false)
           setLoadingHistory(false)
         }
@@ -101,16 +109,19 @@ export function useAssetMarketData({ selectedAsset, period, chartStartDate, char
 
     const loadKline = async () => {
       setLoadingKline(true)
+      const started = performance.now()
       try {
         const resp = await getKline(selectedAsset.symbol, period, chartStartDate, chartEndDate)
         if (!active) return
         setCandles(toCandles(resp.data ?? []))
         setMarketMeta((prev) => ({ ...prev, kline: resp.meta }))
         setKlineError(null)
+        recordFrontendMetric('market.kline.load', performance.now() - started, { category: 'network' })
       } catch (error) {
         if (!active) return
         setCandles([])
         setKlineError(extractApiError(error, '加载 K 线失败'))
+        recordFrontendMetric('market.kline.load', performance.now() - started, { category: 'network', status: 'error' })
       } finally {
         if (active) {
           setLoadingKline(false)
@@ -141,6 +152,7 @@ export function useAssetMarketData({ selectedAsset, period, chartStartDate, char
     syncRequestIdRef.current = requestId
     const requestSymbol = selectedAsset.symbol
     const requestAssetType = selectedAsset.asset_type
+    const started = performance.now()
     try {
       const resp = await syncHistory(requestSymbol, chartStartDate, chartEndDate)
       if (
@@ -162,6 +174,7 @@ export function useAssetMarketData({ selectedAsset, period, chartStartDate, char
           : null,
       )
       refreshChart()
+      recordFrontendMetric('market.history.sync', performance.now() - started, { category: 'interaction' })
     } catch (error) {
       if (
         selectedAssetRef.current.symbol !== requestSymbol ||
@@ -170,6 +183,7 @@ export function useAssetMarketData({ selectedAsset, period, chartStartDate, char
         return
       }
       setHistoryError(extractApiError(error, '同步本地历史失败'))
+      recordFrontendMetric('market.history.sync', performance.now() - started, { category: 'interaction', status: 'error' })
     } finally {
       if (syncRequestIdRef.current === requestId) {
         setSyncingHistory(false)
