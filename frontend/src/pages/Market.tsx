@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import {
   type AssetType,
@@ -244,6 +245,10 @@ function getCompareDecisionState(params: {
   }
 }
 
+function inferMarketFromUrlSymbol(symbol: string) {
+  return symbol.endsWith('.SH') || symbol.endsWith('.SZ') ? 'CN' : 'US'
+}
+
 const loadChartPanel = () => import('../components/market/ChartPanel')
 const loadBacktestPanel = () => import('../components/market/BacktestPanel')
 
@@ -267,6 +272,7 @@ function PanelLoadingFallback({ title, description }: { title: string; descripti
 
 export default function MarketPage() {
   const BACKTEST_TRADES_PAGE_SIZE = 8
+  const [searchParams] = useSearchParams()
   const [compareCopyState, setCompareCopyState] = useState<'idle' | 'done' | 'error'>('idle')
   const [compareBroadcastCopyState, setCompareBroadcastCopyState] = useState<'idle' | 'done' | 'error'>('idle')
   const [compareMarkdownCopyState, setCompareMarkdownCopyState] = useState<'idle' | 'done' | 'error'>('idle')
@@ -427,6 +433,39 @@ export default function MarketPage() {
     syncIfMissing,
   })
   const frontendPerformance = useFrontendPerformance()
+  const urlSymbol = searchParams.get('symbol')?.trim().toUpperCase() ?? ''
+  const lastUrlSymbolRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!urlSymbol) {
+      lastUrlSymbolRef.current = null
+      return
+    }
+    if (lastUrlSymbolRef.current === urlSymbol) return
+
+    lastUrlSymbolRef.current = urlSymbol
+    const asset = {
+      symbol: urlSymbol,
+      name: urlSymbol,
+      asset_type: 'stock' as const,
+      market: inferMarketFromUrlSymbol(urlSymbol),
+    }
+
+    setSearchScope('stock')
+    rememberAsset(asset)
+    selectAsset(asset, urlSymbol)
+    clearSearchResults()
+    clearBacktestState()
+    setBacktestTradesPage(1)
+  }, [
+    clearBacktestState,
+    clearSearchResults,
+    rememberAsset,
+    selectAsset,
+    setBacktestTradesPage,
+    setSearchScope,
+    urlSymbol,
+  ])
 
   const handleSelectAsset = (asset: SearchAsset) => {
     rememberAsset(asset)

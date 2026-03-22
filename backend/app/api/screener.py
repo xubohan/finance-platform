@@ -126,8 +126,13 @@ def _build_live_rows(rows: list[dict[str, Any]], payload: ScreenerRequest) -> li
         symbol = str(row.get("symbol", "")).upper()
         market = str(row.get("market", payload.market)).upper()
         pe_ttm = _to_float(row.get("pe_ttm"))
+        pb = _to_float(row.get("pb"))
         roe = _to_float(row.get("roe"))
         profit_yoy = _to_float(row.get("profit_yoy"))
+        last_price = _to_float(row.get("last_price"))
+        change_pct = _to_float(row.get("change_pct"))
+        volume = _to_float(row.get("volume"))
+        market_cap = _to_float(row.get("market_cap"))
 
         if pe_ttm is None and roe is None and profit_yoy is None:
             continue
@@ -145,9 +150,14 @@ def _build_live_rows(rows: list[dict[str, Any]], payload: ScreenerRequest) -> li
                 "symbol": symbol,
                 "name": _compact_asset_name(row.get("name"), symbol, market),
                 "market": market,
+                "last_price": last_price,
+                "change_pct": change_pct,
+                "volume": volume,
                 "pe_ttm": pe_ttm,
+                "pb": pb,
                 "roe": roe,
                 "profit_yoy": profit_yoy,
+                "market_cap": market_cap,
             }
         )
 

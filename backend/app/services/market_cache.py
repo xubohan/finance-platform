@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 from datetime import datetime, timezone
 import json
 import os
@@ -9,9 +10,31 @@ from typing import Any
 
 from redis import Redis
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 
 _client: Redis | None = None
+
+
+def _disconnect_client(client: Redis | None) -> None:
+    """Best-effort close for redis-py client and its connection pool."""
+    if client is None:
+        return
+    try:
+        client.close()
+    except Exception:
+        pass
+    try:
+        client.connection_pool.disconnect()
+    except Exception:
+        pass
+
+
+def close_market_cache_client() -> None:
+    """Explicitly release the shared Redis client."""
+    global _client
+    client = _client
+    _client = None
+    _disconnect_client(client)
 
 
 def _redis() -> Redis | None:
@@ -29,6 +52,7 @@ def _redis() -> Redis | None:
         )
         _client.ping()
     except Exception:
+        _disconnect_client(_client)
         _client = None
     return _client
 
@@ -107,3 +131,5 @@ def total_ttl_seconds(market: str) -> int:
     """TTL policy for universe totals."""
     return 600 if is_active_session(market) else 12 * 3600
 
+
+atexit.register(close_market_cache_client)

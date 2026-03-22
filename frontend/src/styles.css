@@ -89,7 +89,9 @@ select {
 
 .nav-link {
   display: grid;
-  gap: 4px;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
   padding: 12px 14px;
   margin-bottom: 8px;
   border-radius: 16px;
@@ -109,6 +111,30 @@ select {
   color: #fff;
   background: linear-gradient(135deg, #0c88b7, #2bb7bf);
   box-shadow: 0 18px 38px rgba(12, 136, 183, 0.22);
+}
+
+.nav-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 12px;
+  background: rgba(22, 37, 58, 0.06);
+}
+
+.nav-link-active .nav-icon {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.nav-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.nav-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
 }
 
 .nav-hint {
@@ -246,6 +272,23 @@ select {
   cursor: pointer;
 }
 
+.icon-btn {
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--active-strong);
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+}
+
+.icon-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .slider-wrap {
   display: grid;
   gap: 10px;
@@ -317,6 +360,10 @@ select {
   gap: 18px;
 }
 
+.screener-page {
+  align-items: start;
+}
+
 .workspace-hero {
   display: flex;
   justify-content: space-between;
@@ -336,6 +383,47 @@ select {
   font-size: clamp(1.95rem, 3.2vw, 3rem);
   line-height: 0.98;
   letter-spacing: -0.04em;
+}
+
+.screener-hero {
+  align-items: stretch;
+}
+
+.screener-hero-copy {
+  max-width: 760px;
+}
+
+.screener-hero-side {
+  display: grid;
+  gap: 12px;
+  min-width: min(420px, 100%);
+}
+
+.screener-market-switch {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.screener-market-copy {
+  text-align: right;
+}
+
+.screener-quick-open {
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.screener-control-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--active-strong);
 }
 
 .hero-copy {
@@ -460,6 +548,45 @@ select {
   max-width: 560px;
 }
 
+.screener-action-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.screener-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.screener-filter-card {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.68);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.screener-filter-head {
+  display: grid;
+  gap: 4px;
+}
+
+.screener-filter-head small {
+  color: var(--muted);
+}
+
+.screener-filter-controls {
+  display: grid;
+  grid-template-columns: minmax(90px, 110px) minmax(0, 1fr);
+  align-items: stretch;
+}
+
 .movers-meta {
   margin: 0 0 12px;
 }
@@ -575,6 +702,51 @@ select {
 .asset-chip-quiet {
   background: rgba(22, 37, 58, 0.06);
   color: var(--muted);
+}
+
+.screener-results-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.screener-history-strip {
+  margin-bottom: 6px;
+}
+
+.screener-row {
+  cursor: pointer;
+}
+
+.screener-row:hover {
+  background: rgba(13, 134, 183, 0.05);
+}
+
+.screener-row:focus-within,
+.screener-row:focus {
+  outline: none;
+  background: rgba(13, 134, 183, 0.08);
+}
+
+.screener-row-link {
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: var(--active-strong);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.screener-pagination-row {
+  margin-top: 14px;
+  margin-bottom: 0;
+}
+
+.screener-pagination-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .empty-hint {
@@ -1159,6 +1331,11 @@ select {
     flex-direction: column;
   }
 
+  .screener-action-bar,
+  .screener-results-meta {
+    justify-content: flex-start;
+  }
+
   .asset-actions {
     justify-items: start;
   }
@@ -1212,6 +1389,17 @@ select {
     flex-direction: column;
     align-items: flex-start;
     padding: 18px;
+  }
+
+  .screener-market-switch,
+  .screener-market-copy {
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .screener-hero-side {
+    min-width: 0;
+    width: 100%;
   }
 
   .workspace-quick-nav {

@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 
 import AppShell from './components/layout/AppShell'
 import MarketPage from './pages/Market'
+import ScreenerPage from './pages/Screener/ScreenerPage'
 
 export default function App() {
   return (
@@ -10,7 +11,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/market" replace />} />
         <Route path="/market" element={<MarketPage />} />
         <Route path="/chart" element={<Navigate to="/market" replace />} />
-        <Route path="/screener" element={<Navigate to="/market" replace />} />
+        <Route path="/screener" element={<ScreenerPage />} />
         <Route path="/factors" element={<Navigate to="/market" replace />} />
         <Route path="/backtest" element={<Navigate to="/market" replace />} />
         <Route path="/ai" element={<Navigate to="/market" replace />} />
