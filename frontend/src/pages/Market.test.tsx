@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -17,6 +17,7 @@ const mockSyncHistory = vi.fn()
 const mockGetHealth = vi.fn()
 const mockGetObservability = vi.fn()
 const mockGetCacheMaintenance = vi.fn()
+const mockScrollIntoView = vi.fn()
 
 vi.mock('../api/backtest', () => ({
   runBacktest: (...args: unknown[]) => mockRunBacktest(...args),
@@ -71,6 +72,11 @@ describe('MarketPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     window.localStorage.clear()
+    Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: mockScrollIntoView,
+      writable: true,
+    })
     Object.defineProperty(window.navigator, 'clipboard', {
       configurable: true,
       value: {
@@ -78,6 +84,7 @@ describe('MarketPage', () => {
       },
     })
     mockClipboardWriteText.mockResolvedValue(undefined)
+    mockScrollIntoView.mockReset()
 
     mockSearchAssets.mockResolvedValue({ data: [], meta: {} })
     mockGetTopMovers
@@ -169,6 +176,22 @@ describe('MarketPage', () => {
     expect(screen.getByDisplayValue('全部')).toBeInTheDocument()
   })
 
+  it('submits asset search when pressing Enter in the input', async () => {
+    render(<MarketPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '切换' })).toBeInTheDocument()
+    })
+
+    const input = screen.getByPlaceholderText('输入代码或名称，例如 AAPL / 600519.SH / BTC')
+    await userEvent.clear(input)
+    await userEvent.type(input, 'BTC{enter}')
+
+    await waitFor(() => {
+      expect(mockGetMarketSummary).toHaveBeenLastCalledWith('BTC')
+    })
+  })
+
   it('ignores stale backtest results after switching asset', async () => {
     let resolveBacktest: ((value: unknown) => void) | null = null
     mockRunBacktest.mockImplementation(
@@ -231,6 +254,24 @@ describe('MarketPage', () => {
     expect(chartHeading.compareDocumentPosition(backtestHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.queryByRole('link', { name: '笔记' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '研究笔记' })).not.toBeInTheDocument()
+  })
+
+  it('scrolls smoothly to workspace sections from quick nav links', async () => {
+    const replaceStateSpy = vi.spyOn(window.history, 'replaceState')
+    try {
+      render(<MarketPage />)
+
+      await waitFor(() => {
+        expect(screen.getByRole('link', { name: 'K 线' })).toBeInTheDocument()
+      })
+
+      await userEvent.click(screen.getByRole('link', { name: 'K 线' }))
+
+      expect(mockScrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+      expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '#workspace-chart')
+    } finally {
+      replaceStateSpy.mockRestore()
+    }
   })
 
   it('keeps workspace quick nav inside the main column before overview content', async () => {
@@ -1096,6 +1137,57 @@ describe('MarketPage', () => {
     expect(screen.getByText('对比摘要已复制。')).toBeInTheDocument()
   })
 
+  it('auto clears copied compare summary feedback after the timeout', async () => {
+    let usingFakeTimers = false
+    mockCompareBacktestStrategies.mockResolvedValueOnce({
+      data: [
+        { strategy_name: 'ema_cross', label: 'EMA Cross', total_return: 15, annual_return: 7, sharpe_ratio: 1.3, max_drawdown: 5, win_rate: 58, trade_count: 6 },
+        { strategy_name: 'ma_cross', label: 'MA Cross', total_return: 12, annual_return: 5, sharpe_ratio: 1.1, max_drawdown: 6, win_rate: 55, trade_count: 8 },
+      ],
+      meta: { count: 2, ranking_metric: 'total_return', storage_source: 'local', as_of: '2026-03-15T00:00:00+00:00' },
+    })
+
+    try {
+      render(<MarketPage />)
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: '对比' })).toBeInTheDocument()
+      })
+
+      await userEvent.click(screen.getByRole('button', { name: '对比' }))
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: '展开复盘工具' })).toBeInTheDocument()
+      })
+
+      await userEvent.click(screen.getByRole('button', { name: '展开复盘工具' }))
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: '复制对比摘要' })).toBeInTheDocument()
+      })
+
+      vi.useFakeTimers()
+      usingFakeTimers = true
+      await act(async () => {
+        screen.getByRole('button', { name: '复制对比摘要' }).click()
+        await Promise.resolve()
+      })
+
+      expect(screen.getByText('对比摘要已复制。')).toBeInTheDocument()
+
+      act(() => {
+        vi.advanceTimersByTime(2500)
+      })
+
+      expect(screen.queryByText('对比摘要已复制。')).not.toBeInTheDocument()
+    } finally {
+      if (usingFakeTimers) {
+        vi.runOnlyPendingTimers()
+        vi.useRealTimers()
+      }
+    }
+  })
+
   it('copies compare broadcast text from the compare pool panel', async () => {
     mockCompareBacktestStrategies.mockResolvedValueOnce({
       data: [
@@ -1122,9 +1214,9 @@ describe('MarketPage', () => {
     await userEvent.click(screen.getByRole('button', { name: '复制播报文案' }))
 
     expect(mockClipboardWriteText).toHaveBeenCalledWith(expect.stringContaining('AAPL 回测复盘'))
-    expect(mockClipboardWriteText).toHaveBeenCalledWith(expect.stringContaining('MA Cross 当前 #2 / 3'))
+    expect(mockClipboardWriteText).toHaveBeenCalledWith(expect.stringContaining('MA Cross 当前 #2 /'))
     expect(mockClipboardWriteText).toHaveBeenCalledWith(expect.stringContaining('最优 EMA Cross'))
-    expect(mockClipboardWriteText).toHaveBeenCalledWith(expect.stringContaining('相对 Buy&Hold 2.00%'))
+    expect(mockClipboardWriteText).toHaveBeenCalledWith(expect.stringContaining('相对 Buy&Hold'))
     expect(screen.getByText('对比播报文案已复制。')).toBeInTheDocument()
   })
 

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 
 import {
   type AssetType,
@@ -69,6 +70,16 @@ type CompareJourneyStep = {
   detail: string
   action?: CompareJourneyAction | null
 }
+
+type FeedbackState = 'idle' | 'done' | 'error'
+type FeedbackStateKey =
+  | 'compareCopy'
+  | 'compareBroadcastCopy'
+  | 'compareMarkdownCopy'
+  | 'compareTemplateCopy'
+  | 'compareTemplateImport'
+
+const FEEDBACK_RESET_DELAY_MS = 2500
 
 function getCompareJourneyStatusLabel(status: CompareJourneyStatus) {
   if (status === 'done') return '已完成'
@@ -267,11 +278,11 @@ function PanelLoadingFallback({ title, description }: { title: string; descripti
 
 export default function MarketPage() {
   const BACKTEST_TRADES_PAGE_SIZE = 8
-  const [compareCopyState, setCompareCopyState] = useState<'idle' | 'done' | 'error'>('idle')
-  const [compareBroadcastCopyState, setCompareBroadcastCopyState] = useState<'idle' | 'done' | 'error'>('idle')
-  const [compareMarkdownCopyState, setCompareMarkdownCopyState] = useState<'idle' | 'done' | 'error'>('idle')
-  const [compareTemplateCopyState, setCompareTemplateCopyState] = useState<'idle' | 'done' | 'error'>('idle')
-  const [compareTemplateImportState, setCompareTemplateImportState] = useState<'idle' | 'done' | 'error'>('idle')
+  const [compareCopyState, setCompareCopyState] = useState<FeedbackState>('idle')
+  const [compareBroadcastCopyState, setCompareBroadcastCopyState] = useState<FeedbackState>('idle')
+  const [compareMarkdownCopyState, setCompareMarkdownCopyState] = useState<FeedbackState>('idle')
+  const [compareTemplateCopyState, setCompareTemplateCopyState] = useState<FeedbackState>('idle')
+  const [compareTemplateImportState, setCompareTemplateImportState] = useState<FeedbackState>('idle')
   const [compareSnapshotFilter, setCompareSnapshotFilter] = useState<'asset' | 'all'>('asset')
   const [showAllCompareSnapshots, setShowAllCompareSnapshots] = useState(false)
   const [showCompareAdvancedTools, setShowCompareAdvancedTools] = useState(false)
@@ -288,6 +299,46 @@ export default function MarketPage() {
     previousStrategyName: BacktestStrategyName | null
   } | null>(null)
   const lastSavedCompareSnapshotRef = useRef<string | null>(null)
+  const feedbackResetTimersRef = useRef<Partial<Record<FeedbackStateKey, number>>>({})
+
+  const setTimedFeedbackState = (
+    key: FeedbackStateKey,
+    setter: Dispatch<SetStateAction<FeedbackState>>,
+    nextState: FeedbackState,
+  ) => {
+    const hasWindow = typeof window !== 'undefined'
+    const currentTimer = feedbackResetTimersRef.current[key]
+    if (hasWindow && typeof currentTimer === 'number') {
+      window.clearTimeout(currentTimer)
+    }
+    delete feedbackResetTimersRef.current[key]
+    setter(nextState)
+    if (!hasWindow || nextState === 'idle') return
+    feedbackResetTimersRef.current[key] = window.setTimeout(() => {
+      setter('idle')
+      delete feedbackResetTimersRef.current[key]
+    }, FEEDBACK_RESET_DELAY_MS)
+  }
+
+  const updateCompareCopyState = (nextState: FeedbackState) => {
+    setTimedFeedbackState('compareCopy', setCompareCopyState, nextState)
+  }
+
+  const updateCompareBroadcastCopyState = (nextState: FeedbackState) => {
+    setTimedFeedbackState('compareBroadcastCopy', setCompareBroadcastCopyState, nextState)
+  }
+
+  const updateCompareMarkdownCopyState = (nextState: FeedbackState) => {
+    setTimedFeedbackState('compareMarkdownCopy', setCompareMarkdownCopyState, nextState)
+  }
+
+  const updateCompareTemplateCopyState = (nextState: FeedbackState) => {
+    setTimedFeedbackState('compareTemplateCopy', setCompareTemplateCopyState, nextState)
+  }
+
+  const updateCompareTemplateImportState = (nextState: FeedbackState) => {
+    setTimedFeedbackState('compareTemplateImport', setCompareTemplateImportState, nextState)
+  }
   const {
     searchScope,
     setSearchScope,
@@ -462,9 +513,9 @@ export default function MarketPage() {
     clearBacktestState()
     refreshChart()
     setBacktestTradesPage(1)
-    setCompareCopyState('idle')
-    setCompareBroadcastCopyState('idle')
-    setCompareMarkdownCopyState('idle')
+    updateCompareCopyState('idle')
+    updateCompareBroadcastCopyState('idle')
+    updateCompareMarkdownCopyState('idle')
     setCompareSnapshotFilter('asset')
     setShowAllCompareSnapshots(false)
     setShowCompareReviewTools(false)
@@ -505,9 +556,9 @@ export default function MarketPage() {
     clearSearchResults()
     clearBacktestState()
     setBacktestTradesPage(1)
-    setCompareCopyState('idle')
-    setCompareBroadcastCopyState('idle')
-    setCompareMarkdownCopyState('idle')
+    updateCompareCopyState('idle')
+    updateCompareBroadcastCopyState('idle')
+    updateCompareMarkdownCopyState('idle')
   }
 
   const handleDeleteCompareSnapshot = (snapshot: CompareSnapshotHistoryItem) => {
@@ -557,8 +608,8 @@ export default function MarketPage() {
     ].slice(0, 8)
     persistSavedCompareTemplates(nextTemplates)
     setSavedCompareTemplates(nextTemplates)
-    setCompareTemplateCopyState('idle')
-    setCompareTemplateImportState('idle')
+    updateCompareTemplateCopyState('idle')
+    updateCompareTemplateImportState('idle')
   }
 
   const handleApplySavedCompareTemplate = (template: SavedCompareTemplate, options?: { runCompare?: boolean }) => {
@@ -568,9 +619,9 @@ export default function MarketPage() {
     setCompareRankingMetric(template.compareRankingMetric)
     clearBacktestState()
     setBacktestTradesPage(1)
-    setCompareCopyState('idle')
-    setCompareBroadcastCopyState('idle')
-    setCompareMarkdownCopyState('idle')
+    updateCompareCopyState('idle')
+    updateCompareBroadcastCopyState('idle')
+    updateCompareMarkdownCopyState('idle')
     setPendingCompareTemplateId(options?.runCompare ? template.id : null)
   }
 
@@ -578,33 +629,33 @@ export default function MarketPage() {
     const nextTemplates = savedCompareTemplates.filter((item) => item.id !== template.id)
     persistSavedCompareTemplates(nextTemplates)
     setSavedCompareTemplates(nextTemplates)
-    setCompareTemplateCopyState('idle')
-    setCompareTemplateImportState('idle')
+    updateCompareTemplateCopyState('idle')
+    updateCompareTemplateImportState('idle')
   }
 
   const handleCopySavedCompareTemplates = async () => {
     if (savedCompareTemplates.length === 0 || !navigator.clipboard?.writeText) {
-      setCompareTemplateCopyState('error')
+      updateCompareTemplateCopyState('error')
       return
     }
     try {
       await navigator.clipboard.writeText(JSON.stringify(savedCompareTemplates, null, 2))
-      setCompareTemplateCopyState('done')
+      updateCompareTemplateCopyState('done')
     } catch {
-      setCompareTemplateCopyState('error')
+      updateCompareTemplateCopyState('error')
     }
   }
 
   const handleImportSavedCompareTemplates = () => {
     if (typeof window === 'undefined' || typeof window.prompt !== 'function') {
-      setCompareTemplateImportState('error')
+      updateCompareTemplateImportState('error')
       return
     }
     const raw = window.prompt('粘贴模板 JSON')
     if (!raw || !raw.trim()) return
     const importedTemplates = parseSavedCompareTemplates(raw)
     if (importedTemplates.length === 0) {
-      setCompareTemplateImportState('error')
+      updateCompareTemplateImportState('error')
       return
     }
     const importedSignatures = new Set(importedTemplates.map((item) => getSavedCompareTemplateSignature(item)))
@@ -617,7 +668,7 @@ export default function MarketPage() {
     ].slice(0, 8)
     persistSavedCompareTemplates(nextTemplates)
     setSavedCompareTemplates(nextTemplates)
-    setCompareTemplateImportState('done')
+    updateCompareTemplateImportState('done')
   }
 
   const handleRenameSavedCompareTemplate = (template: SavedCompareTemplate) => {
@@ -634,8 +685,8 @@ export default function MarketPage() {
     )
     persistSavedCompareTemplates(nextTemplates)
     setSavedCompareTemplates(nextTemplates)
-    setCompareTemplateCopyState('idle')
-    setCompareTemplateImportState('idle')
+    updateCompareTemplateCopyState('idle')
+    updateCompareTemplateImportState('idle')
   }
 
   const rememberCompareUndoSnapshot = () => {
@@ -661,9 +712,9 @@ export default function MarketPage() {
     setPendingBacktestStrategy(options?.runBacktest ? nextStrategyName : null)
     clearBacktestState()
     setBacktestTradesPage(1)
-    setCompareCopyState('idle')
-    setCompareBroadcastCopyState('idle')
-    setCompareMarkdownCopyState('idle')
+    updateCompareCopyState('idle')
+    updateCompareBroadcastCopyState('idle')
+    updateCompareMarkdownCopyState('idle')
   }
 
   const handleStrategyChange = (nextStrategyName: typeof strategyName) => {
@@ -684,9 +735,9 @@ export default function MarketPage() {
     }
     rememberCompareUndoSnapshot()
     replaceCompareStrategies(nextStrategies)
-    setCompareCopyState('idle')
-    setCompareBroadcastCopyState('idle')
-    setCompareMarkdownCopyState('idle')
+    updateCompareCopyState('idle')
+    updateCompareBroadcastCopyState('idle')
+    updateCompareMarkdownCopyState('idle')
   }
 
   const handleKeepTopCompareCandidates = () => {
@@ -700,9 +751,9 @@ export default function MarketPage() {
     )
     clearBacktestState()
     setBacktestTradesPage(1)
-    setCompareCopyState('idle')
-    setCompareBroadcastCopyState('idle')
-    setCompareMarkdownCopyState('idle')
+    updateCompareCopyState('idle')
+    updateCompareBroadcastCopyState('idle')
+    updateCompareMarkdownCopyState('idle')
   }
 
   const handleKeepBetterCompareCandidates = () => {
@@ -711,9 +762,9 @@ export default function MarketPage() {
     replaceCompareStrategies(compareRows.slice(0, currentCompareRank).map((row) => row.strategy_name))
     clearBacktestState()
     setBacktestTradesPage(1)
-    setCompareCopyState('idle')
-    setCompareBroadcastCopyState('idle')
-    setCompareMarkdownCopyState('idle')
+    updateCompareCopyState('idle')
+    updateCompareBroadcastCopyState('idle')
+    updateCompareMarkdownCopyState('idle')
   }
 
   const handleToggleCompareStrategy = (name: BacktestStrategyName) => {
@@ -730,9 +781,9 @@ export default function MarketPage() {
     }
     rememberCompareUndoSnapshot()
     replaceCompareStrategies(nextStrategies)
-    setCompareCopyState('idle')
-    setCompareBroadcastCopyState('idle')
-    setCompareMarkdownCopyState('idle')
+    updateCompareCopyState('idle')
+    updateCompareBroadcastCopyState('idle')
+    updateCompareMarkdownCopyState('idle')
   }
 
   const handleUndoCompareAdjustment = () => {
@@ -741,9 +792,9 @@ export default function MarketPage() {
     replaceCompareStrategies(compareUndoSnapshot.compareStrategyNames)
     setPreviousStrategyName(compareUndoSnapshot.previousStrategyName)
     setCompareUndoSnapshot(null)
-    setCompareCopyState('idle')
-    setCompareBroadcastCopyState('idle')
-    setCompareMarkdownCopyState('idle')
+    updateCompareCopyState('idle')
+    updateCompareBroadcastCopyState('idle')
+    updateCompareMarkdownCopyState('idle')
   }
 
   const isCompareTemplateActive = (templateStrategies: readonly string[]) => {
@@ -1010,42 +1061,53 @@ export default function MarketPage() {
 
   const handleCopyCompareSummary = async () => {
     if (!compareSummaryText || isCompareStale || !navigator.clipboard?.writeText) {
-      setCompareCopyState('error')
+      updateCompareCopyState('error')
       return
     }
     try {
       await navigator.clipboard.writeText(compareSummaryText)
-      setCompareCopyState('done')
+      updateCompareCopyState('done')
     } catch {
-      setCompareCopyState('error')
+      updateCompareCopyState('error')
     }
   }
 
   const handleCopyCompareBroadcast = async () => {
     if (!compareBroadcastText || isCompareStale || !navigator.clipboard?.writeText) {
-      setCompareBroadcastCopyState('error')
+      updateCompareBroadcastCopyState('error')
       return
     }
     try {
       await navigator.clipboard.writeText(compareBroadcastText)
-      setCompareBroadcastCopyState('done')
+      updateCompareBroadcastCopyState('done')
     } catch {
-      setCompareBroadcastCopyState('error')
+      updateCompareBroadcastCopyState('error')
     }
   }
 
   const handleCopyCompareMarkdown = async () => {
     if (!compareMarkdownTable || isCompareStale || !navigator.clipboard?.writeText) {
-      setCompareMarkdownCopyState('error')
+      updateCompareMarkdownCopyState('error')
       return
     }
     try {
       await navigator.clipboard.writeText(compareMarkdownTable)
-      setCompareMarkdownCopyState('done')
+      updateCompareMarkdownCopyState('done')
     } catch {
-      setCompareMarkdownCopyState('error')
+      updateCompareMarkdownCopyState('error')
     }
   }
+
+  useEffect(() => {
+    return () => {
+      if (typeof window === 'undefined') return
+      Object.values(feedbackResetTimersRef.current).forEach((timer) => {
+        if (typeof timer === 'number') {
+          window.clearTimeout(timer)
+        }
+      })
+    }
+  }, [])
 
   useEffect(() => {
     if (import.meta.env.MODE === 'test') {
@@ -1079,9 +1141,21 @@ export default function MarketPage() {
   }, [pendingCompareTemplateId, runStrategyCompare])
 
   useEffect(() => {
-    setCompareCopyState('idle')
-    setCompareBroadcastCopyState('idle')
-    setCompareMarkdownCopyState('idle')
+    const clearFeedbackState = (
+      key: FeedbackStateKey,
+      setter: Dispatch<SetStateAction<FeedbackState>>,
+    ) => {
+      const currentTimer = feedbackResetTimersRef.current[key]
+      if (typeof window !== 'undefined' && typeof currentTimer === 'number') {
+        window.clearTimeout(currentTimer)
+      }
+      delete feedbackResetTimersRef.current[key]
+      setter('idle')
+    }
+
+    clearFeedbackState('compareCopy', setCompareCopyState)
+    clearFeedbackState('compareBroadcastCopy', setCompareBroadcastCopyState)
+    clearFeedbackState('compareMarkdownCopy', setCompareMarkdownCopyState)
   }, [compareBroadcastText, compareSummaryText, isCompareStale])
 
   useEffect(() => {

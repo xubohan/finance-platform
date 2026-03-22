@@ -33,7 +33,13 @@ export default function AssetSearchPanel({
         <span>从单一入口切换工作对象</span>
       </div>
       <div className="stack-gap">
-        <div className="form-row search-form-row">
+        <form
+          className="form-row search-form-row"
+          onSubmit={(event) => {
+            event.preventDefault()
+            onApplyInput()
+          }}
+        >
           <select
             className="text-input"
             value={searchScope}
@@ -49,10 +55,10 @@ export default function AssetSearchPanel({
             onChange={(event) => onSearchInputChange(event.target.value.toUpperCase())}
             placeholder="输入代码或名称，例如 AAPL / 600519.SH / BTC"
           />
-          <button className="primary-btn" type="button" onClick={onApplyInput}>
+          <button className="primary-btn" type="submit">
             切换
           </button>
-        </div>
+        </form>
         <p className="panel-copy">搜索结果来自实时股票标的列表与本地加密资产表。直接输入代码也能快速切换。</p>
         {searchError ? <p className="warn-text">{searchError}</p> : null}
         {searchLoading ? <p className="panel-copy">搜索中...</p> : null}
