@@ -5,6 +5,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { chromium } from 'playwright'
 
+const DEFAULT_VIEWPORT = { width: 1440, height: 2200 }
+const MEDIUM_DESKTOP_VIEWPORT = { width: 1365, height: 900 }
+
 function parseArgs(argv) {
   const args = {
     baseUrl: 'http://127.0.0.1',
@@ -261,6 +264,107 @@ function buildManifest(sections, viewport) {
   }
 }
 
+async function openWorkspace(page, baseUrl, fixtures) {
+  await routeApi(page, fixtures)
+  await page.goto(`${baseUrl}/market`, { waitUntil: 'networkidle' })
+  await page.locator('.workspace-sidebar .workspace-panel').first().waitFor({ state: 'visible', timeout: 60000 })
+  await page.locator('.workspace-main .workspace-quick-nav').waitFor({ state: 'visible', timeout: 60000 })
+  await page.locator('#workspace-overview .asset-panel').waitFor({ state: 'visible', timeout: 60000 })
+}
+
+async function primeBacktestSection(page) {
+  await page.locator('#workspace-backtest').waitFor({ state: 'visible', timeout: 60000 })
+  await page.getByRole('button', { name: '运行当前回测' }).waitFor({ state: 'visible', timeout: 60000 })
+  await page.getByRole('button', { name: '运行当前回测' }).click()
+  await page.getByText('成交记录第 1 / 2 页，共 12 笔').waitFor()
+}
+
+async function collectMediumDesktopLayout(page) {
+  return page.evaluate(() => {
+    const box = (selector) => {
+      const element = document.querySelector(selector)
+      if (!element) return null
+      const rect = element.getBoundingClientRect()
+      return {
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height,
+      }
+    }
+
+    return {
+      sidebar: box('.workspace-sidebar'),
+      searchPanel: box('.workspace-sidebar .workspace-panel:first-child'),
+      switchButton: box('.workspace-sidebar .search-form-row .primary-btn'),
+      runtimePanel: box('.workspace-sidebar .workspace-panel:last-child'),
+      sidebarRows: Array.from(
+        document.querySelectorAll('.workspace-sidebar .status-row, .workspace-sidebar .runtime-observation-row'),
+      ).map((element) => {
+        const rect = element.getBoundingClientRect()
+        return {
+          right: rect.right,
+          width: rect.width,
+          text: element.textContent?.trim() ?? '',
+        }
+      }),
+      quickNav: box('.workspace-main .workspace-quick-nav'),
+      overview: box('#workspace-overview .asset-panel'),
+    }
+  })
+}
+
+async function assertMediumDesktopLayout(browser, baseUrl, fixtures, outputDir) {
+  const page = await browser.newPage({ viewport: MEDIUM_DESKTOP_VIEWPORT })
+  await openWorkspace(page, baseUrl, fixtures)
+  await page.waitForTimeout(300)
+
+  const layout = await collectMediumDesktopLayout(page)
+  const layoutPath = path.join(outputDir, 'layout-check-medium-desktop.json')
+  fs.writeFileSync(
+    layoutPath,
+    JSON.stringify({ viewport: MEDIUM_DESKTOP_VIEWPORT, layout }, null, 2) + '\n',
+    'utf8',
+  )
+
+  const missing = Object.entries(layout)
+    .filter(([, value]) => value === null)
+    .map(([key]) => key)
+  if (missing.length > 0) {
+    throw new Error(`Missing layout targets for medium desktop check: ${missing.join(', ')}`)
+  }
+
+  const { sidebar, searchPanel, switchButton, quickNav, overview } = layout
+  const errors = []
+
+  if (searchPanel.right > sidebar.right + 0.5) {
+    errors.push(`search panel overflowed sidebar: panel.right=${searchPanel.right}, sidebar.right=${sidebar.right}`)
+  }
+  if (searchPanel.right > quickNav.left - 0.5) {
+    errors.push(`search panel intruded into main column: panel.right=${searchPanel.right}, main.left=${quickNav.left}`)
+  }
+  if (switchButton.bottom > searchPanel.bottom + 0.5) {
+    errors.push(`switch button escaped search panel: button.bottom=${switchButton.bottom}, panel.bottom=${searchPanel.bottom}`)
+  }
+  if (overview.top < quickNav.bottom + 8) {
+    errors.push(`overview overlapped quick nav: overview.top=${overview.top}, quickNav.bottom=${quickNav.bottom}`)
+  }
+  for (const row of layout.sidebarRows) {
+    if (row.right > sidebar.right + 0.5) {
+      errors.push(`sidebar row overflowed sidebar: row.right=${row.right}, sidebar.right=${sidebar.right}, text=${row.text}`)
+      break
+    }
+  }
+
+  await page.close()
+
+  if (errors.length > 0) {
+    throw new Error(`Medium desktop layout overlap detected:\n${errors.join('\n')}`)
+  }
+}
+
 function compareWithBaseline(manifest, baseline) {
   const changed = []
   for (const [name, info] of Object.entries(manifest.sections)) {
@@ -289,14 +393,11 @@ async function main() {
   ensureDir(args.outputDir)
   const fixtures = buildFixtures()
   const browser = await chromium.launch({ headless: true })
-  const page = await browser.newPage({ viewport: { width: 1440, height: 2200 } })
+  const page = await browser.newPage({ viewport: DEFAULT_VIEWPORT })
 
-  await routeApi(page, fixtures)
-  await page.goto(`${args.baseUrl}/market`, { waitUntil: 'networkidle' })
-  await page.locator('#workspace-backtest').waitFor({ state: 'visible', timeout: 60000 })
-  await page.getByRole('button', { name: '运行当前回测' }).waitFor({ state: 'visible', timeout: 60000 })
-  await page.getByRole('button', { name: '运行当前回测' }).click()
-  await page.getByText('成交记录第 1 / 2 页，共 12 笔').waitFor()
+  await openWorkspace(page, args.baseUrl, fixtures)
+  await primeBacktestSection(page)
+  await assertMediumDesktopLayout(browser, args.baseUrl, fixtures, args.outputDir)
 
   const sectionIds = ['workspace-overview', 'workspace-chart', 'workspace-backtest']
   const sections = {}
@@ -317,7 +418,7 @@ async function main() {
     }
   }
 
-  const manifest = buildManifest(sections, { width: 1440, height: 2200 })
+  const manifest = buildManifest(sections, DEFAULT_VIEWPORT)
   const manifestPath = path.join(args.outputDir, 'manifest.json')
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8')
 

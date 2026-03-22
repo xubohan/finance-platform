@@ -58,7 +58,7 @@ export default function AssetOverviewPanel({
     <section className="workspace-panel asset-panel">
       <div className="asset-header">
         <div>
-          <p className="eyebrow">Current Target</p>
+          <p className="eyebrow">当前标的</p>
           <h3>{displayText(selectedAsset.name)}</h3>
           <p className="asset-meta">
             {selectedAsset.symbol} · {selectedAsset.asset_type.toUpperCase()} · {displayText(selectedAsset.market)}
@@ -89,7 +89,7 @@ export default function AssetOverviewPanel({
           <strong>{quoteText}</strong>
         </div>
         <div className="summary-card">
-          <small>Quote Source</small>
+          <small>报价来源</small>
           <strong>{quoteSource}</strong>
         </div>
         <div className="summary-card">
@@ -97,7 +97,7 @@ export default function AssetOverviewPanel({
           <strong>{loadingHistory ? '同步中' : `${displayLocaleNumber(historyStatus?.local_rows)} rows`}</strong>
         </div>
         <div className="summary-card">
-          <small>Kline Source</small>
+          <small>K 线来源</small>
           <strong>{klineSource}</strong>
         </div>
       </div>

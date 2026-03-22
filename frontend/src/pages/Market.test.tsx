@@ -233,6 +233,22 @@ describe('MarketPage', () => {
     expect(screen.queryByRole('heading', { name: '研究笔记' })).not.toBeInTheDocument()
   })
 
+  it('keeps workspace quick nav inside the main column before overview content', async () => {
+    const { container } = render(<MarketPage />)
+
+    await waitFor(() => {
+      expect(container.querySelector('.workspace-main .workspace-quick-nav')).not.toBeNull()
+    })
+
+    const mainQuickNav = container.querySelector('.workspace-main .workspace-quick-nav')
+    const overviewSection = container.querySelector('.workspace-main #workspace-overview')
+
+    expect(container.querySelector('.market-page > .workspace-quick-nav')).toBeNull()
+    expect(mainQuickNav).not.toBeNull()
+    expect(overviewSection).not.toBeNull()
+    expect((mainQuickNav as Node).compareDocumentPosition(overviewSection as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('keeps quote warning visible when summary returns partial success', async () => {
     mockGetMarketSummary.mockResolvedValueOnce({
       data: {

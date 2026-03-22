@@ -54,7 +54,7 @@ export default function ChartPanel({
         <h3>实时行情与 K 线</h3>
         <span>切换区间时会直接请求实时接口，并把最新历史落到本地数据层</span>
       </div>
-      <div className="form-row toolbar-row">
+      <div className="form-row toolbar-row chart-toolbar-row">
         <select className="text-input" value={period} onChange={(event) => onPeriodChange(event.target.value as MarketPeriod)}>
           <option value="1d">1D</option>
           <option value="1W">1W</option>
@@ -75,7 +75,7 @@ export default function ChartPanel({
         onSelect={onSelectPreset}
       />
       <p className="panel-copy">
-        当前标的 {selectedAsset.symbol} | Quote As Of: {formatAsOf(quoteAsOf)} | Kline As Of: {formatAsOf(marketMeta.kline?.as_of)}
+        当前标的 {selectedAsset.symbol} | 报价时间: {formatAsOf(quoteAsOf)} | K 线时间: {formatAsOf(marketMeta.kline?.as_of)}
       </p>
       <div className="history-strip">
         <span>本地开始: {formatAsOf(historyStatus?.local_start)}</span>

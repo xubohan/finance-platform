@@ -1205,7 +1205,6 @@ export default function MarketPage() {
       <WorkspaceHero
         onResetWorkspace={handleResetWorkspace}
       />
-      <WorkspaceQuickNav />
 
       <div className="workspace-grid">
         <aside className="workspace-sidebar">
@@ -1277,6 +1276,8 @@ export default function MarketPage() {
         </aside>
 
         <div className="workspace-main">
+          <WorkspaceQuickNav />
+
           <div id="workspace-overview" className="workspace-anchor">
             <AssetOverviewPanel
               selectedAsset={selectedAsset}

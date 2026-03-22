@@ -33,7 +33,7 @@ export default function AssetSearchPanel({
         <span>从单一入口切换工作对象</span>
       </div>
       <div className="stack-gap">
-        <div className="form-row">
+        <div className="form-row search-form-row">
           <select
             className="text-input"
             value={searchScope}

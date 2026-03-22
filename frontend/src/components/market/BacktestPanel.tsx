@@ -161,7 +161,7 @@ export default function BacktestPanel({
     <section className="workspace-panel">
       <div className="panel-head">
         <h3>单标的回测</h3>
-        <span>围绕当前标的运行，不再以全市场扫描为主入口</span>
+        <span>只围绕当前标的运行</span>
       </div>
 
       <div className="backtest-form">
@@ -199,7 +199,7 @@ export default function BacktestPanel({
       />
       <label className="toggle-row">
         <input type="checkbox" checked={syncIfMissing} onChange={(event) => onSyncIfMissingChange(event.target.checked)} />
-        <span>回测时允许自动补齐缺失历史</span>
+        <span>回测时自动补齐缺失历史</span>
       </label>
       {strategyCatalogError ? <p className="panel-copy">{strategyCatalogError}</p> : null}
       {selectedStrategyMeta?.summary ? <p className="panel-copy">说明: {selectedStrategyMeta.summary}</p> : null}
@@ -385,14 +385,14 @@ export default function BacktestPanel({
       ) : null}
 
       <p className="panel-copy">
-        目标标的: {selectedSymbol} | 类型: {selectedAssetType.toUpperCase()} | 数据状态:{' '}
+        标的: {selectedSymbol} | 类型: {selectedAssetType.toUpperCase()} | 数据源:{' '}
         {displayText(backtestMeta?.storage_source ?? backtestMeta?.ohlcv_source ?? backtestMeta?.source)}
       </p>
       <p className="panel-copy">
-        自动补数: {syncIfMissing ? '开启' : '关闭'} | 最近同步: {formatAsOf(backtestMeta?.as_of)}
+        自动补数: {syncIfMissing ? '开启' : '关闭'} | 同步时间: {formatAsOf(backtestMeta?.as_of)}
       </p>
       {!syncIfMissing && backtestMeta?.coverage_complete === false ? (
-        <p className="warn-text">当前本地历史不完整，需先落地本地历史，或重新开启自动补数。</p>
+        <p className="warn-text">本地历史不完整，请先同步或开启自动补数。</p>
       ) : null}
       {backtestError ? <p className="warn-text">{backtestError}</p> : null}
       {compareError ? <p className="warn-text">{compareError}</p> : null}
@@ -419,27 +419,27 @@ export default function BacktestPanel({
 
       <div className="metrics-grid">
         <div className="metric-card">
-          <small>Total Return</small>
+          <small>总收益</small>
           <strong>{displayPercent(backtestResult?.metrics?.total_return, 2)}</strong>
         </div>
         <div className="metric-card">
-          <small>Annual Return</small>
+          <small>年化收益</small>
           <strong>{displayPercent(backtestResult?.metrics?.annual_return, 2)}</strong>
         </div>
         <div className="metric-card">
-          <small>Sharpe</small>
+          <small>夏普</small>
           <strong>{displayFixed(backtestResult?.metrics?.sharpe_ratio, 2)}</strong>
         </div>
         <div className="metric-card">
-          <small>Max Drawdown</small>
+          <small>回撤</small>
           <strong>{displayPercent(backtestResult?.metrics?.max_drawdown, 2)}</strong>
         </div>
         <div className="metric-card">
-          <small>Win Rate</small>
+          <small>胜率</small>
           <strong>{displayPercent(backtestResult?.metrics?.win_rate, 2)}</strong>
         </div>
         <div className="metric-card">
-          <small>Trades</small>
+          <small>成交</small>
           <strong>{displayFixed(backtestResult?.metrics?.trade_count, 0)}</strong>
         </div>
       </div>
@@ -450,11 +450,11 @@ export default function BacktestPanel({
           <table className="table">
             <thead>
               <tr>
-                <th>Strategy</th>
-                <th>Total Return</th>
-                <th>Sharpe</th>
-                <th>Max Drawdown</th>
-                <th>Trades</th>
+                <th>策略</th>
+                <th>总收益</th>
+                <th>夏普</th>
+                <th>回撤</th>
+                <th>成交</th>
               </tr>
             </thead>
             <tbody>
@@ -477,8 +477,8 @@ export default function BacktestPanel({
           <EquityCurve points={backtestResult.equity_curve} height={320} />
         ) : (
           <div className="empty-state">
-            <strong>还没有回测结果</strong>
-            <p>确认区间和参数后，直接在当前页运行单标的回测。</p>
+            <strong>暂无回测结果</strong>
+            <p>确认区间和参数后，直接运行回测。</p>
           </div>
         )}
       </div>
@@ -514,11 +514,11 @@ export default function BacktestPanel({
         <table className="table">
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Action</th>
-              <th>Price</th>
-              <th>Shares</th>
-              <th>PnL</th>
+              <th>日期</th>
+              <th>动作</th>
+              <th>价格</th>
+              <th>数量</th>
+              <th>盈亏</th>
             </tr>
           </thead>
           <tbody>
