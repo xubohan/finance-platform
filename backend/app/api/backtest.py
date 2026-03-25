@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -317,6 +318,7 @@ class BacktestLabRequest(BaseModel):
     """Batch backtest request for market-wide stock universe."""
 
     market: Literal["us", "cn"] = "us"
+    symbols: list[str] = Field(default_factory=list, max_length=500)
     strategy_name: str = Field(..., pattern=SUPPORTED_STRATEGY_PATTERN)
     parameters: dict[str, Any] = Field(default_factory=dict)
     start_date: str
@@ -819,20 +821,51 @@ async def run_backtest_lab(payload: BacktestLabRequest, db: AsyncSession = Depen
             detail=_error("INVALID_STRATEGY_PARAMS", str(exc), {"strategy": payload.strategy_name}),
         ) from exc
 
-    snapshot, snapshot_meta = fetch_stock_snapshot_with_meta(
-        market=payload.market,
-        limit=payload.symbol_limit,
-        force_refresh=payload.force_refresh,
-        allow_stale=payload.allow_stale,
-    )
-    if not snapshot:
+    manual_symbols = [str(item or "").upper().strip() for item in payload.symbols]
+    deduped_symbols: list[str] = []
+    seen_symbols: set[str] = set()
+    for symbol in manual_symbols:
+        if not symbol or symbol in seen_symbols:
+            continue
+        seen_symbols.add(symbol)
+        deduped_symbols.append(symbol)
+
+    if payload.symbols and not deduped_symbols:
         raise HTTPException(
-            status_code=502,
-            detail=_error(
-                "UPSTREAM_UNAVAILABLE",
-                "Failed to fetch latest stock snapshot for backtest lab",
-                {"market": payload.market},
-            ),
+            status_code=400,
+            detail=_error("INVALID_SYMBOLS", "symbols must include at least one valid stock symbol", {}),
+        )
+
+    if deduped_symbols:
+        snapshot = [{"symbol": symbol, "name": symbol, "market": payload.market.upper()} for symbol in deduped_symbols]
+        snapshot_meta = {
+            "source": "manual",
+            "stale": False,
+            "as_of": datetime.now(timezone.utc).isoformat(),
+            "cache_age_sec": 0,
+        }
+        total_available = len(snapshot)
+        total_meta = {"source": "manual", "stale": False, "as_of": snapshot_meta["as_of"], "cache_age_sec": 0}
+    else:
+        snapshot, snapshot_meta = fetch_stock_snapshot_with_meta(
+            market=payload.market,
+            limit=payload.symbol_limit,
+            force_refresh=payload.force_refresh,
+            allow_stale=payload.allow_stale,
+        )
+        if not snapshot:
+            raise HTTPException(
+                status_code=502,
+                detail=_error(
+                    "UPSTREAM_UNAVAILABLE",
+                    "Failed to fetch latest stock snapshot for backtest lab",
+                    {"market": payload.market},
+                ),
+            )
+        total_available, total_meta = fetch_stock_universe_total_with_meta(
+            payload.market,
+            force_refresh=payload.force_refresh,
+            allow_stale=payload.allow_stale,
         )
 
     engine = BacktestEngine(strategy=strategy, initial_capital=payload.initial_capital)
@@ -883,12 +916,6 @@ async def run_backtest_lab(payload: BacktestLabRequest, db: AsyncSession = Depen
     start_idx = (page - 1) * payload.page_size
     end_idx = start_idx + payload.page_size
     page_rows = ranked_rows[start_idx:end_idx]
-    total_available, total_meta = fetch_stock_universe_total_with_meta(
-        payload.market,
-        force_refresh=payload.force_refresh,
-        allow_stale=payload.allow_stale,
-    )
-
     return {
         "data": page_rows,
         "meta": {

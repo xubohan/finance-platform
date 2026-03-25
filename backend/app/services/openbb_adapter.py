@@ -1,6 +1,7 @@
-"""OpenBB adapter layer and market-data fallbacks.
+"""Multi-provider market-data adapter layer.
 
-This module is the only data-fetch entry point for market/fundamental/news data.
+This module keeps the existing function signatures while routing to AKShare,
+YFinance, CoinGecko, and Eastmoney instead of relying on OpenBB at runtime.
 """
 
 from __future__ import annotations
@@ -21,11 +22,20 @@ from app.services.market_cache import (
     symbols_ttl_seconds,
     total_ttl_seconds,
 )
+from app.services.quote_provider_controller import (
+    fetch_crypto_realtime_quotes as _fetch_crypto_realtime_quotes,
+    fetch_realtime_quotes as _fetch_realtime_quotes,
+    fetch_stock_realtime_quotes as _fetch_stock_realtime_quotes,
+)
 
 logger = logging.getLogger(__name__)
 
 try:
-    # OpenBB may not be available in all environments; fallback logic handles this.
+    import akshare as ak
+except Exception:  # pragma: no cover - optional runtime dependency
+    ak = None
+
+try:
     from openbb import obb  # type: ignore
 except Exception:  # pragma: no cover - optional runtime dependency
     obb = None
@@ -52,6 +62,9 @@ CRYPTO_SYMBOLS = {
     "ICP",
     "FIL",
 }
+
+OHLCVInterval = Literal["1m", "5m", "1h", "1d", "1W", "1M"]
+INTRADAY_INTERVALS = {"1m", "5m", "1h"}
 
 CN_STOCK_UNIVERSE_URL = "https://push2.eastmoney.com/api/qt/clist/get"
 NASDAQ_STOCK_SCREENER_URL = "https://api.nasdaq.com/api/screener/stocks"
@@ -1072,14 +1085,14 @@ def detect_provider(symbol: str) -> tuple[str, str]:
     Returns:
         (asset_type, provider)
         asset_type: "stock" or "crypto"
-        provider: "akshare" | "yfinance" | "coinbase"
+        provider: "akshare" | "yfinance" | "coingecko"
     """
     s = symbol.upper().strip()
 
     # Crypto: direct symbol whitelist, or common USD/USDT quoted pairs.
     clean = s.replace("-USD", "").replace("-USDT", "")
     if clean in CRYPTO_SYMBOLS or s.endswith(("-USD", "-USDT")):
-        return ("crypto", "coinbase")
+        return ("crypto", "coingecko")
 
     # CN/HK equity symbol heuristics.
     if s.endswith((".SZ", ".SH", ".BJ")) or (s.isdigit() and len(s) == 6):
@@ -1099,17 +1112,178 @@ def normalize_symbol(symbol: str, provider: str) -> str:
         # akshare uses raw numeric codes without suffix.
         return s.split(".")[0]
 
-    if provider == "coinbase":
-        # coinbase uses base-USD pair format.
+    if provider == "coingecko":
+        # CoinGecko is still keyed by the base token; keep a predictable USD pair.
         base = s.replace("-USD", "").replace("-USDT", "")
         return f"{base}-USD"
 
     return s
 
 
-def _interval_to_yfinance(interval: Literal["1d", "1W", "1M"]) -> str:
+def _interval_to_yfinance(interval: OHLCVInterval) -> str:
     """Map unified interval contract to yfinance interval syntax."""
-    return {"1d": "1d", "1W": "1wk", "1M": "1mo"}[interval]
+    return {
+        "1m": "1m",
+        "5m": "5m",
+        "1h": "60m",
+        "1d": "1d",
+        "1W": "1wk",
+        "1M": "1mo",
+    }[interval]
+
+
+def _interval_to_binance(interval: Literal["1m", "5m", "1h"]) -> str:
+    return {"1m": "1m", "5m": "5m", "1h": "1h"}[interval]
+
+
+def _fetch_ohlcv_akshare(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+) -> pd.DataFrame:
+    if ak is None:
+        raise RuntimeError("AKShare is unavailable")
+
+    raw_symbol = symbol.upper().split(".")[0]
+    df = ak.stock_zh_a_hist(
+        symbol=raw_symbol,
+        period="daily",
+        start_date=start_date.replace("-", ""),
+        end_date=end_date.replace("-", ""),
+        adjust="qfq",
+    )
+    if df.empty:
+        return pd.DataFrame()
+    return df.rename(
+        columns={
+            "日期": "time",
+            "开盘": "open",
+            "最高": "high",
+            "最低": "low",
+            "收盘": "close",
+            "成交量": "volume",
+        }
+    )
+
+
+def _coingecko_id(symbol: str) -> str:
+    mapping = {
+        "BTC": "bitcoin",
+        "ETH": "ethereum",
+        "BNB": "binancecoin",
+        "SOL": "solana",
+        "XRP": "ripple",
+        "ADA": "cardano",
+        "AVAX": "avalanche-2",
+        "DOGE": "dogecoin",
+        "DOT": "polkadot",
+        "LINK": "chainlink",
+        "LTC": "litecoin",
+    }
+    base = symbol.upper().replace("-USD", "").replace("-USDT", "")
+    return mapping.get(base, base.lower())
+
+
+def _fetch_ohlcv_coingecko(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+) -> pd.DataFrame:
+    import requests
+
+    start_ts = int(pd.Timestamp(start_date, tz="UTC").timestamp())
+    end_ts = int((pd.Timestamp(end_date, tz="UTC") + pd.Timedelta(days=1)).timestamp())
+    response = requests.get(
+        f"https://api.coingecko.com/api/v3/coins/{_coingecko_id(symbol)}/market_chart/range",
+        params={"vs_currency": "usd", "from": start_ts, "to": end_ts},
+        timeout=10,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    prices = pd.DataFrame(payload.get("prices", []), columns=["ts", "price"])
+    volumes = pd.DataFrame(payload.get("total_volumes", []), columns=["ts", "volume"])
+    if prices.empty:
+        return pd.DataFrame()
+    prices["time"] = pd.to_datetime(prices["ts"], unit="ms", utc=True)
+    prices["trade_date"] = prices["time"].dt.floor("D")
+    grouped = prices.groupby("trade_date")["price"]
+    out = grouped.agg(open="first", high="max", low="min", close="last").reset_index()
+    if not volumes.empty:
+        volumes["time"] = pd.to_datetime(volumes["ts"], unit="ms", utc=True)
+        volumes["trade_date"] = volumes["time"].dt.floor("D")
+        daily_vol = volumes.groupby("trade_date")["volume"].last().reset_index()
+        out = out.merge(daily_vol, on="trade_date", how="left")
+    out["volume"] = out.get("volume", 0).fillna(0)
+    out["time"] = out["trade_date"]
+    return out[["time", "open", "high", "low", "close", "volume"]]
+
+
+def _fetch_ohlcv_binance_intraday(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    interval: Literal["1m", "5m", "1h"],
+) -> pd.DataFrame:
+    """Fetch crypto intraday candles from Binance public kline endpoint."""
+    import requests
+
+    base = symbol.upper().strip().replace("-USD", "").replace("-USDT", "")
+    pair = f"{base}USDT"
+    granularity = _interval_to_binance(interval)
+    start_ts = int(pd.Timestamp(start_date, tz="UTC").timestamp() * 1000)
+    end_ts = int((pd.Timestamp(end_date, tz="UTC") + pd.Timedelta(days=1)).timestamp() * 1000)
+
+    rows: list[list[Any]] = []
+    next_start = start_ts
+    while next_start < end_ts:
+        response = requests.get(
+            "https://api.binance.com/api/v3/klines",
+            params={
+                "symbol": pair,
+                "interval": granularity,
+                "startTime": next_start,
+                "endTime": end_ts,
+                "limit": 1000,
+            },
+            timeout=10,
+        )
+        response.raise_for_status()
+        batch = response.json()
+        if not isinstance(batch, list) or not batch:
+            break
+        rows.extend(batch)
+        last_open_time = int(batch[-1][0])
+        next_start = last_open_time + 1
+        if len(batch) < 1000:
+            break
+
+    if not rows:
+        return pd.DataFrame()
+
+    frame = pd.DataFrame(
+        rows,
+        columns=[
+            "open_time",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "close_time",
+            "quote_volume",
+            "trade_count",
+            "taker_buy_base_volume",
+            "taker_buy_quote_volume",
+            "ignore",
+        ],
+    )
+    frame["time"] = pd.to_datetime(frame["open_time"], unit="ms", utc=True)
+    frame["open"] = pd.to_numeric(frame["open"], errors="coerce")
+    frame["high"] = pd.to_numeric(frame["high"], errors="coerce")
+    frame["low"] = pd.to_numeric(frame["low"], errors="coerce")
+    frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
+    frame["volume"] = pd.to_numeric(frame["volume"], errors="coerce")
+    return frame[["time", "open", "high", "low", "close", "volume"]]
 
 
 def _fetch_ohlcv_openbb(
@@ -1118,7 +1292,7 @@ def _fetch_ohlcv_openbb(
     asset_type: str,
     start_date: str,
     end_date: str,
-    interval: Literal["1d", "1W", "1M"],
+    interval: OHLCVInterval,
 ) -> pd.DataFrame:
     """Fetch OHLCV via OpenBB SDK."""
     if obb is None:
@@ -1149,7 +1323,7 @@ def _fetch_ohlcv_yfinance(
     provider: str,
     start_date: str,
     end_date: str,
-    interval: Literal["1d", "1W", "1M"],
+    interval: OHLCVInterval,
 ) -> pd.DataFrame:
     """Fallback OHLCV fetch using yfinance."""
     import yfinance as yf
@@ -1171,8 +1345,8 @@ def _fetch_ohlcv_yfinance(
             yf_symbol = f"{s}.SS"
 
     # For crypto fallback use pair quote in USD.
-    if provider == "coinbase":
-        yf_symbol = normalize_symbol(yf_symbol, "coinbase")
+    if provider == "coingecko":
+        yf_symbol = normalize_symbol(yf_symbol, "coingecko")
 
     # yfinance end date is exclusive; add one day to include the boundary.
     end_inclusive = (pd.to_datetime(end_date) + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -1203,7 +1377,7 @@ def _fetch_ohlcv_stooq(
     import requests
 
     s = symbol.upper().strip()
-    if provider == "coinbase":
+    if provider == "coingecko":
         # Stooq has limited crypto coverage; keep the original token as-is.
         stooq_symbol = s.lower()
     elif s.endswith(".SZ"):
@@ -1292,7 +1466,7 @@ def fetch_ohlcv_with_meta(
     symbol: str,
     start_date: str,
     end_date: str,
-    interval: Literal["1d", "1W", "1M"] = "1d",
+    interval: OHLCVInterval = "1d",
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Fetch OHLCV history for stocks or crypto and return standardized columns.
 
@@ -1310,21 +1484,47 @@ def fetch_ohlcv_with_meta(
     started = time.perf_counter()
     asset_type, provider = detect_provider(symbol)
     normalized = normalize_symbol(symbol, provider)
-    source = "openbb"
+    source = "yfinance"
+    df = pd.DataFrame()
+    if interval in INTRADAY_INTERVALS:
+        if asset_type == "crypto":
+            try:
+                df = _fetch_ohlcv_binance_intraday(
+                    symbol=symbol,
+                    start_date=start_date,
+                    end_date=end_date,
+                    interval=interval,
+                )
+                source = "binance"
+            except Exception as exc:
+                logger.warning("Binance intraday fetch failed for %s, fallback to yfinance: %s", symbol, exc)
+        if df.empty:
+            try:
+                df = _fetch_ohlcv_yfinance(
+                    symbol=symbol,
+                    provider=provider,
+                    start_date=start_date,
+                    end_date=end_date,
+                    interval=interval,
+                )
+                source = "yfinance"
+            except Exception as exc:
+                logger.warning("yfinance intraday fetch failed for %s: %s", symbol, exc)
+                df = pd.DataFrame()
+    elif provider == "akshare":
+        try:
+            df = _fetch_ohlcv_akshare(symbol, start_date, end_date)
+            source = "akshare"
+        except Exception as exc:
+            logger.warning("AKShare fetch_ohlcv failed for %s, fallback to yfinance: %s", symbol, exc)
+    elif provider == "coingecko":
+        try:
+            df = _fetch_ohlcv_coingecko(symbol, start_date, end_date)
+            source = "coingecko"
+        except Exception as exc:
+            logger.warning("CoinGecko fetch_ohlcv failed for %s, fallback to yfinance: %s", symbol, exc)
 
-    try:
-        df = _fetch_ohlcv_openbb(
-            symbol=normalized,
-            provider=provider,
-            asset_type=asset_type,
-            start_date=start_date,
-            end_date=end_date,
-            interval=interval,
-        )
-    except Exception as exc:
-        # Fallback keeps Step-5 gate deterministic even if OpenBB or upstream is flaky.
-        logger.warning("OpenBB fetch_ohlcv failed for %s, fallback to yfinance: %s", symbol, exc)
-        source = "yfinance"
+    if df.empty:
         try:
             df = _fetch_ohlcv_yfinance(
                 symbol=symbol,
@@ -1333,23 +1533,23 @@ def fetch_ohlcv_with_meta(
                 end_date=end_date,
                 interval=interval,
             )
+            source = "yfinance"
         except Exception as fallback_exc:
             logger.warning("yfinance fallback failed for %s: %s", symbol, fallback_exc)
             df = pd.DataFrame()
 
-        if df.empty:
-            try:
-                # Second fallback for environments where Yahoo endpoints are blocked.
-                source = "stooq"
-                df = _fetch_ohlcv_stooq(
-                    symbol=symbol,
-                    provider=provider,
-                    start_date=start_date,
-                    end_date=end_date,
-                )
-            except Exception as final_exc:
-                logger.error("Stooq fallback failed for %s: %s", symbol, final_exc)
-                return pd.DataFrame(), _snapshot_meta("live", False, None)
+    if df.empty and interval not in INTRADAY_INTERVALS:
+        try:
+            source = "stooq"
+            df = _fetch_ohlcv_stooq(
+                symbol=symbol,
+                provider=provider,
+                start_date=start_date,
+                end_date=end_date,
+            )
+        except Exception as final_exc:
+            logger.error("Stooq fallback failed for %s: %s", symbol, final_exc)
+            return pd.DataFrame(), _snapshot_meta("live", False, None)
 
     out = _normalize_ohlcv_frame(df, symbol)
     as_of = _utc_now() if not out.empty else None
@@ -1372,7 +1572,7 @@ def fetch_ohlcv(
     symbol: str,
     start_date: str,
     end_date: str,
-    interval: Literal["1d", "1W", "1M"] = "1d",
+    interval: OHLCVInterval = "1d",
 ) -> pd.DataFrame:
     """Backward-compatible OHLCV fetch helper returning only DataFrame."""
     out, _ = fetch_ohlcv_with_meta(
@@ -1393,13 +1593,36 @@ def fetch_fundamentals(symbol: str) -> pd.DataFrame:
     _, provider = detect_provider(symbol)
     normalized = normalize_symbol(symbol, provider)
 
-    try:
-        if obb is None:
-            raise RuntimeError("OpenBB SDK is unavailable")
-        result = obb.equity.fundamental.metrics(normalized, provider=provider)
-        return result.to_dataframe().reset_index()
-    except Exception as exc:
-        logger.warning("OpenBB fetch_fundamentals failed for %s: %s", symbol, exc)
+    if provider == "akshare" and ak is not None:
+        try:
+            abstract_df = ak.stock_financial_abstract_ths(symbol=normalized.split(".")[0])
+            info_df = ak.stock_individual_info_em(symbol=normalized.split(".")[0])
+            info_map = {}
+            if not info_df.empty:
+                info_map = {str(row["item"]): row["value"] for _, row in info_df.iterrows()}
+            if not abstract_df.empty:
+                renamed = abstract_df.rename(
+                    columns={
+                        "报告期": "report_date",
+                        "净利润": "net_income",
+                        "净利润同比增长率": "profit_yoy",
+                        "营业总收入": "total_revenue",
+                        "营业总收入同比增长率": "revenue_yoy",
+                        "基本每股收益": "eps",
+                        "净资产收益率": "roe",
+                        "每股经营现金流": "operating_cashflow",
+                        "资产负债率": "asset_liability_ratio",
+                    }
+                ).copy()
+                renamed["symbol"] = symbol.upper()
+                renamed["name"] = info_map.get("股票简称", symbol.upper())
+                renamed["market_cap"] = info_map.get("总市值")
+                renamed["pe_ttm"] = info_map.get("市盈率(动态)") or info_map.get("市盈率-动态")
+                renamed["pb"] = info_map.get("市净率")
+                renamed["report_period"] = "annual"
+                return renamed.reset_index(drop=True)
+        except Exception as exc:
+            logger.warning("AKShare fetch_fundamentals failed for %s: %s", symbol, exc)
 
     # Minimal fallback using yfinance metadata fields.
     try:
@@ -1469,50 +1692,26 @@ def fetch_news(symbol: str, limit: int = 20) -> list[dict]:
         return []
 
 
-def fetch_crypto_realtime_price(symbols: list[str]) -> dict:
-    """Fetch real-time crypto prices from CoinGecko free endpoint.
+def fetch_crypto_realtime_price(symbols: list[str]) -> dict[str, dict[str, Any]]:
+    """Fetch crypto realtime quotes with provider fallback chain."""
+    return _fetch_crypto_realtime_quotes(symbols)
 
-    Returns:
-        {"BTC": {"price": 65000.0, "change_pct_24h": 2.3}, ...}
-    """
-    import requests
 
-    coingecko_ids = {
-        "BTC": "bitcoin",
-        "ETH": "ethereum",
-        "BNB": "binancecoin",
-        "SOL": "solana",
-        "XRP": "ripple",
-        "ADA": "cardano",
-        "AVAX": "avalanche-2",
-        "DOGE": "dogecoin",
-        "DOT": "polkadot",
-    }
+def fetch_stock_realtime_price(symbols: list[str]) -> dict[str, dict[str, Any]]:
+    """Fetch stock realtime quotes with provider fallback chain."""
+    return _fetch_stock_realtime_quotes(symbols)
 
-    ids = ",".join([coingecko_ids.get(s.upper(), s.lower()) for s in symbols])
 
-    try:
-        resp = requests.get(
-            "https://api.coingecko.com/api/v3/simple/price",
-            params={
-                "ids": ids,
-                "vs_currencies": "usd",
-                "include_24hr_change": "true",
-            },
-            timeout=5,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-
-        result: dict = {}
-        for sym in symbols:
-            coin_id = coingecko_ids.get(sym.upper(), sym.lower())
-            if coin_id in data:
-                result[sym] = {
-                    "price": data[coin_id]["usd"],
-                    "change_pct_24h": data[coin_id].get("usd_24h_change", 0),
-                }
-        return result
-    except Exception as exc:
-        logger.error("CoinGecko fetch failed: %s", exc)
+def fetch_stock_realtime_quote(symbol: str) -> dict[str, Any]:
+    """Compatibility helper returning one stock quote payload."""
+    normalized = str(symbol or "").upper().strip()
+    if not normalized:
         return {}
+    rows = _fetch_stock_realtime_quotes([normalized])
+    item = rows.get(normalized)
+    return item if isinstance(item, dict) else {}
+
+
+def fetch_realtime_price(symbols: list[str], asset_type: Literal["crypto", "stock"]) -> dict[str, dict[str, Any]]:
+    """Unified realtime quote entrypoint for external callers."""
+    return _fetch_realtime_quotes(symbols, asset_type)

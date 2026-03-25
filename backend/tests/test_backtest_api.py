@@ -147,6 +147,61 @@ def test_backtest_lab_returns_502_when_live_source_unavailable(monkeypatch: pyte
     assert exc.value.detail["error"]["code"] == "UPSTREAM_UNAVAILABLE"
 
 
+def test_backtest_lab_supports_manual_symbols(monkeypatch: pytest.MonkeyPatch) -> None:
+    candles = _ohlcv_rows()
+
+    def _unexpected_snapshot(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("snapshot fetch should not run when symbols are provided")
+
+    monkeypatch.setattr(backtest_api, "fetch_stock_snapshot_with_meta", _unexpected_snapshot)
+
+    async def _mock_load_ohlcv_window(**kwargs):
+        return (
+            candles,
+            {
+                "source": "local",
+                "sync_performed": False,
+                "stale": False,
+                "as_of": "2026-03-26T00:00:00+00:00",
+            },
+        )
+
+    def _mock_run(self, df, symbol, asset_type):  # type: ignore[no-untyped-def]
+        score = 10.0 if symbol == "AAPL" else 5.0
+        return {
+            "metrics": {
+                "total_return": score,
+                "annual_return": score / 2,
+                "sharpe_ratio": 1.0,
+                "max_drawdown": 4.0,
+                "win_rate": 50.0,
+                "trade_count": 8,
+            }
+        }
+
+    monkeypatch.setattr(backtest_api, "load_ohlcv_window", _mock_load_ohlcv_window)
+    monkeypatch.setattr(backtest_api.BacktestEngine, "run", _mock_run)
+
+    payload = backtest_api.BacktestLabRequest(
+        market="us",
+        symbols=["aapl", "msft", "AAPL"],
+        strategy_name="ma_cross",
+        parameters={"fast": 5, "slow": 20},
+        start_date="2024-01-01",
+        end_date="2024-12-31",
+        page=1,
+        page_size=50,
+    )
+    resp = asyncio.run(backtest_api.run_backtest_lab(payload))
+
+    assert resp["meta"]["source"] == "manual"
+    assert resp["meta"]["symbols_fetched"] == 2
+    assert resp["meta"]["symbols_backtested"] == 2
+    assert resp["meta"]["total_available"] == 2
+    assert resp["meta"]["count"] == 2
+    assert resp["data"][0]["symbol"] == "AAPL"
+
+
 def test_run_backtest_prefers_local_window(monkeypatch: pytest.MonkeyPatch) -> None:
     candles = _ohlcv_rows()
 
