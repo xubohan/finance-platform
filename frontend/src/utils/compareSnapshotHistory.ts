@@ -15,6 +15,7 @@ export type CompareSnapshotHistoryItem = {
   rsiPeriod: number
   oversold: number
   overbought: number
+  multiplier: number
   initialCapital: number
   backtestStartDate: string
   backtestEndDate: string
@@ -69,6 +70,7 @@ export function parseCompareSnapshotHistory(raw: string | null): CompareSnapshot
         const rsiPeriod = readFiniteNumber(candidate.rsiPeriod, 2, 100)
         const oversold = readFiniteNumber(candidate.oversold, -1000, 1000)
         const overbought = readFiniteNumber(candidate.overbought, -1000, 1000)
+        const multiplier = readFiniteNumber(candidate.multiplier ?? candidate.oversold, -1000, 1000)
         const initialCapital = readFiniteNumber(candidate.initialCapital, 1000, 1_000_000_000)
         if (typeof candidate.symbol !== 'string' || !candidate.symbol.trim()) return null
         if (typeof candidate.createdAt !== 'string' || !candidate.createdAt.trim()) return null
@@ -78,6 +80,7 @@ export function parseCompareSnapshotHistory(raw: string | null): CompareSnapshot
           rsiPeriod === null ||
           oversold === null ||
           overbought === null ||
+          multiplier === null ||
           initialCapital === null ||
           !isValidDateInput(candidate.backtestStartDate) ||
           !isValidDateInput(candidate.backtestEndDate) ||
@@ -108,6 +111,7 @@ export function parseCompareSnapshotHistory(raw: string | null): CompareSnapshot
           rsiPeriod,
           oversold,
           overbought,
+          multiplier,
           initialCapital,
           backtestStartDate: candidate.backtestStartDate,
           backtestEndDate: candidate.backtestEndDate,

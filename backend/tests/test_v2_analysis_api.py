@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -32,41 +33,9 @@ def test_v2_analysis_sentiment_uppercases_context_symbols() -> None:
     assert payload["sentiment_label"] in {"positive", "neutral", "negative"}
 
 
-def test_v2_analysis_event_impact_async_task_roundtrip(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def _mock_run_event_impact(*, db, payload):
-        assert payload.event_type == "fed_meeting"
-        assert payload.symbols == ["spy", "qqq"]
-        return {
-            "data": {
-                "sentiment_score": 0.4,
-                "sentiment_label": "positive",
-                "llm_analysis": {
-                    "summary": "mock-summary",
-                    "key_factors": ["policy easing"],
-                    "risk_factors": [],
-                    "impact_assessment": "mock-impact",
-                },
-                "historical_context": {
-                    "event_type": "fed_meeting",
-                    "similar_events_found": 7,
-                },
-                "symbol_predictions": [
-                    {
-                        "symbol": "SPY",
-                        "historical_avg_return_5d": 1.8,
-                        "predicted_direction": "up",
-                        "confidence": 0.72,
-                        "basis": "mock-basis",
-                        "return_distribution": {"p50": 1.8},
-                    }
-                ],
-            },
-            "meta": {"task_id": "", "model_used": "heuristic-v1", "tokens_used": 0, "processing_ms": 0},
-        }
-
-    session = QueueAsyncSession([])
-    monkeypatch.setattr(analysis_v2.controller, "run_event_impact", _mock_run_event_impact)
-    client = make_client(db_session=session)
+def test_v2_analysis_event_impact_requires_queue_when_delay_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(analysis_v2, "run_event_impact_task", None)
+    client = make_client(db_session=QueueAsyncSession([]))
 
     submit = client.post(
         "/api/v2/analysis/event-impact",
@@ -77,18 +46,48 @@ def test_v2_analysis_event_impact_async_task_roundtrip(monkeypatch: pytest.Monke
             "window_days": 20,
         },
     )
-    assert submit.status_code == 200
-    task_id = submit.json()["data"]["task_id"]
-    assert task_id
 
-    task_resp = client.get(f"/api/v2/analysis/tasks/{task_id}")
-    assert task_resp.status_code == 200
-    task_payload = task_resp.json()
-    assert task_payload["status"] == "completed"
-    result = task_payload["result"]
-    assert result["meta"]["task_id"] == task_id
-    assert result["data"]["historical_context"]["similar_events_found"] == 7
-    assert result["data"]["symbol_predictions"][0]["symbol"] == "SPY"
+    assert submit.status_code == 503
+    assert submit.json()["detail"]["error"]["code"] == "TASK_DISPATCH_UNAVAILABLE"
+
+
+def test_v2_analysis_event_impact_queues_celery_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = QueueAsyncSession([])
+    monkeypatch.setattr(
+        analysis_v2,
+        "run_event_impact_task",
+        SimpleNamespace(delay=lambda payload: SimpleNamespace(id="analysis-task-1")),
+    )
+    client = make_client(db_session=session)
+
+    submit = client.post(
+        "/api/v2/analysis/event-impact",
+        json={
+            "event_text": "Fed keeps rates unchanged",
+            "event_type": "macro",
+            "symbols": ["SPY", "QQQ"],
+            "window_days": 20,
+        },
+    )
+
+    assert submit.status_code == 202
+    payload = submit.json()
+    assert payload["data"]["task_id"] == "analysis-task-1"
+    assert payload["meta"]["execution_mode"] == "celery"
+
+    status = client.get("/api/v2/analysis/tasks/analysis-task-1")
+    assert status.status_code == 200
+    assert status.json()["status"] == "pending"
+
+
+def test_v2_analysis_task_pending_without_local_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(analysis_controller_service, "AsyncResult", lambda task_id, app=None: SimpleNamespace(failed=lambda: False, successful=lambda: False, state="STARTED"))
+    monkeypatch.setattr(analysis_controller_service, "celery_app", object())
+    client = make_client()
+
+    status = client.get("/api/v2/analysis/tasks/analysis-task-unknown")
+    assert status.status_code == 200
+    assert status.json()["status"] == "pending"
 
 
 def test_v2_analysis_task_pending(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -98,6 +97,15 @@ def test_v2_analysis_task_pending(monkeypatch: pytest.MonkeyPatch) -> None:
     resp = client.get("/api/v2/analysis/tasks/pending-1")
     assert resp.status_code == 200
     assert resp.json() == {"status": "pending"}
+
+
+def test_v2_analysis_task_failed_returns_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(analysis_v2.controller, "get_task_status", lambda task_id: {"status": "failed", "task_id": task_id, "error": "boom"})
+    client = make_client()
+
+    resp = client.get("/api/v2/analysis/tasks/failed-1")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "failed", "task_id": "failed-1", "error": "boom"}
 
 
 def test_v2_analysis_task_not_found() -> None:
@@ -196,4 +204,54 @@ def test_v2_analysis_cn_flow_heatmap_returns_rows() -> None:
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["meta"]["count"] == 1
+    assert payload["meta"]["source"] == "persisted"
+    assert payload["meta"]["entity_type"] == "symbol"
     assert payload["data"][0]["symbol"] == "600000.SH"
+
+
+def test_v2_analysis_cn_flow_heatmap_falls_back_to_live_sector_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = QueueAsyncSession([FakeResult(rows=[])])
+    monkeypatch.setattr(
+        analysis_v2,
+        "fetch_sector_flow_snapshot",
+        lambda limit=30: [
+            {
+                "symbol": "通信设备",
+                "display_name": "通信设备",
+                "entity_type": "sector",
+                "leader_symbol": "亨通光电",
+                "trade_date": "2026-03-30",
+                "as_of": "2026-03-28T10:15:00+08:00",
+                "change_pct": 1.2,
+                "main_net": 3269622016.0,
+                "super_large_net": 3236981760.0,
+                "large_net": 32640256.0,
+                "medium_net": -351217408.0,
+                "small_net": -2893428736.0,
+            }
+        ],
+    )
+    client = make_client(db_session=session)
+
+    resp = client.get("/api/v2/analysis/cn-flow-heatmap")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["meta"]["count"] == 1
+    assert payload["meta"]["source"] == "eastmoney_sector_flow"
+    assert payload["meta"]["entity_type"] == "sector"
+    assert payload["meta"]["as_of"] == "2026-03-28T10:15:00+08:00"
+    assert payload["meta"]["stale"] is True
+    assert payload["data"][0]["display_name"] == "通信设备"
+    assert payload["data"][0]["leader_symbol"] == "亨通光电"
+
+
+def test_cn_flow_trade_date_stale_helper_uses_trade_day(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FrozenDateTime:
+        @staticmethod
+        def now(tz=None):
+            return datetime(2026, 3, 30, 12, 0, tzinfo=tz)
+
+    monkeypatch.setattr(analysis_v2, "datetime", _FrozenDateTime)
+
+    assert analysis_v2._cn_flow_trade_date_is_stale("2026-03-29") is True
+    assert analysis_v2._cn_flow_trade_date_is_stale("2026-03-30") is False

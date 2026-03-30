@@ -11,13 +11,8 @@ import {
 } from '../api/backtest'
 import { extractApiError } from '../api/client'
 import type { SearchAsset } from '../api/market'
-import {
-  isFastSlowStrategy,
-  isOscillatorStrategy,
-  isPeriodMultiplierStrategy,
-  isThresholdStrategy,
-  type BacktestStrategyName,
-} from '../utils/backtestStrategies'
+import type { BacktestStrategyName } from '../utils/backtestStrategies'
+import { buildStrategyParameters } from '../utils/backtestParameters'
 import { downloadFile } from '../utils/download'
 import { recordFrontendMetric } from '../utils/runtimePerformance'
 
@@ -84,52 +79,20 @@ export function useBacktestWorkspace({
     setCompareRows((previous) => sortCompareRows(previous))
   }, [compareRankingMetric])
 
-  const buildStrategyParameters = (name: BacktestStrategyName) => {
-    const parameters: Record<string, number> = {}
-    if (isFastSlowStrategy(name)) {
-      parameters.fast = fast
-      parameters.slow = slow
-    }
-    if (isOscillatorStrategy(name)) {
-      parameters.period = rsiPeriod
-      parameters.oversold = oversold
-      parameters.overbought = overbought
-    }
-    if (name === 'bollinger_reversion') {
-      parameters.period = rsiPeriod
-      parameters.stddev = oversold
-    }
-    if (isPeriodMultiplierStrategy(name)) {
-      parameters.period = rsiPeriod
-      parameters.multiplier = oversold
-    }
-    if (name === 'vwap_reversion') {
-      parameters.period = rsiPeriod
-      parameters.deviation_pct = oversold
-    }
-    if (name === 'atr_breakout') {
-      parameters.period = rsiPeriod
-      parameters.multiplier = oversold
-    }
-    if (name === 'donchian_breakout') {
-      parameters.lookback = fast
-      parameters.exit_lookback = slow
-    }
-    if (isThresholdStrategy(name)) {
-      parameters.period = rsiPeriod
-      parameters.threshold = oversold
-    }
-    if (name === 'cci_reversal') {
-      parameters.period = rsiPeriod
-      parameters.oversold = oversold
-      parameters.overbought = overbought
-    }
-    return parameters
-  }
+  const buildStrategyParametersFor = (name: BacktestStrategyName) =>
+    buildStrategyParameters(name, {
+      fast,
+      slow,
+      period: rsiPeriod,
+      oversold,
+      overbought,
+      threshold: oversold,
+      multiplier: oversold,
+    })
 
   const buildCompareParameters = (strategyNames: BacktestStrategyName[]) =>
     strategyNames.reduce<Record<string, Record<string, number>>>((accumulator, name) => {
-      const parameters = buildStrategyParameters(name)
+      const parameters = buildStrategyParametersFor(name)
       if (Object.keys(parameters).length > 0) {
         accumulator[name] = parameters
       }
@@ -141,7 +104,7 @@ export function useBacktestWorkspace({
       symbol: selectedAsset.symbol,
       assetType: selectedAsset.asset_type,
       strategyName,
-      parameters: buildStrategyParameters(strategyName),
+      parameters: buildStrategyParametersFor(strategyName),
       initialCapital,
       backtestStartDate,
       backtestEndDate,
@@ -165,7 +128,7 @@ export function useBacktestWorkspace({
       setBacktestError('回测开始日期必须早于结束日期')
       return
     }
-    const parameters = buildStrategyParameters(strategyName)
+    const parameters = buildStrategyParametersFor(strategyName)
     const requestSignature = buildBacktestSignature()
 
     setLoadingBacktest(true)

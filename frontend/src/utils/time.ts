@@ -5,6 +5,11 @@ export function toDateInputLocal(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
+export function fromDateInputLocal(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
 export function daysAgo(days: number): string {
   const value = new Date()
   value.setDate(value.getDate() - days)
@@ -23,6 +28,14 @@ export function yearsAgo(years: number): string {
 export function yearStart(): string {
   const value = new Date()
   return `${value.getFullYear()}-01-01`
+}
+
+export function monthStart(date = new Date()): string {
+  return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}-01`
+}
+
+export function monthEnd(date = new Date()): string {
+  return toDateInputLocal(new Date(date.getFullYear(), date.getMonth() + 1, 0))
 }
 
 export function formatAsOf(value?: string | null): string {

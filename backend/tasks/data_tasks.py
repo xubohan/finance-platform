@@ -8,7 +8,7 @@ import logging
 
 from sqlalchemy import text
 
-from app.database import AsyncSessionLocal
+from app.database import get_task_db_session
 from app.services.openbb_adapter import detect_provider, fetch_ohlcv
 from tasks.celery_app import celery_app
 
@@ -33,7 +33,7 @@ async def _upsert_ohlcv(symbol: str, asset_type: str, rows: list[dict]) -> int:
         """
     )
 
-    async with AsyncSessionLocal() as session:
+    async with get_task_db_session() as session:
         await session.execute(stmt, rows)
         await session.commit()
 

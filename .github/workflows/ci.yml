@@ -45,7 +45,7 @@ jobs:
         run: npm run check:performance
 
   runtime-validation:
-    name: Runtime Validation
+    name: Runtime Validation V2
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -57,7 +57,7 @@ jobs:
           docker version
           docker compose version
 
-      - name: Run workspace validation
+      - name: Run workspace validation (v2)
         env:
           BASE_URL: http://127.0.0.1
           CURL_RETRY_ATTEMPTS: "5"

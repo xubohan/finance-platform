@@ -233,19 +233,19 @@ async def load_ohlcv_window(
     end_date: str,
     *,
     interval: str = "1d",
-    prefer_local: bool = True,
+    prefer_local: bool = False,
     sync_if_missing: bool = True,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
-    """Load a requested OHLCV window from local storage first, then sync if missing."""
+    """Load a requested OHLCV window, optionally forcing a live upstream refresh."""
     local_df = await read_local_ohlcv(db, symbol, asset_type, start_date, end_date)
     if prefer_local and has_full_local_coverage(local_df, start_date, end_date, asset_type):
         last_time = local_df["time"].iloc[-1].isoformat() if not local_df.empty else None
         return local_df, {
-            "source": "local",
+            "source": "persisted",
             "stale": False,
             "as_of": last_time,
-            "provider": "local",
-            "fetch_source": "database",
+            "provider": "persisted",
+            "fetch_source": "persisted_store",
             "sync_performed": False,
             "coverage_complete": True,
         }
@@ -253,11 +253,11 @@ async def load_ohlcv_window(
     if not sync_if_missing:
         last_time = local_df["time"].iloc[-1].isoformat() if not local_df.empty else None
         return local_df, {
-            "source": "local",
+            "source": "persisted",
             "stale": False,
             "as_of": last_time,
-            "provider": "local",
-            "fetch_source": "database_partial",
+            "provider": "persisted",
+            "fetch_source": "persisted_store_partial",
             "sync_performed": False,
             "coverage_complete": False,
         }
@@ -270,9 +270,10 @@ async def load_ohlcv_window(
         end_date=end_date,
         interval=interval,
     )
+    coverage_complete = has_full_local_coverage(synced_df, start_date, end_date, asset_type) if interval == "1d" else not synced_df.empty
     if synced_df.empty:
         return synced_df, {
-            "source": live_meta.get("source"),
+            "source": live_meta.get("source") or "upstream",
             "stale": live_meta.get("stale"),
             "as_of": live_meta.get("as_of"),
             "provider": live_meta.get("provider"),
@@ -281,25 +282,12 @@ async def load_ohlcv_window(
             "coverage_complete": False,
         }
 
-    reread_df = await read_local_ohlcv(db, symbol, asset_type, start_date, end_date)
-    if not reread_df.empty and has_full_local_coverage(reread_df, start_date, end_date, asset_type):
-        last_time = reread_df["time"].iloc[-1].isoformat()
-        return reread_df, {
-            "source": "local",
-            "stale": False,
-            "as_of": last_time,
-            "provider": live_meta.get("provider"),
-            "fetch_source": live_meta.get("fetch_source"),
-            "sync_performed": True,
-            "coverage_complete": True,
-        }
-
     return synced_df, {
-        "source": live_meta.get("source"),
+        "source": live_meta.get("source") or "upstream",
         "stale": live_meta.get("stale"),
-        "as_of": live_meta.get("as_of"),
+        "as_of": live_meta.get("as_of") or synced_df["time"].iloc[-1].isoformat(),
         "provider": live_meta.get("provider"),
         "fetch_source": live_meta.get("fetch_source"),
         "sync_performed": True,
-        "coverage_complete": False,
+        "coverage_complete": coverage_complete,
     }

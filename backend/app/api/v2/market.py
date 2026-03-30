@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 import pandas as pd
@@ -24,6 +25,7 @@ from app.services.openbb_adapter import (
 router = APIRouter()
 
 _TRACKED_CRYPTO_SYMBOLS = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "AVAX", "DOGE", "DOT"]
+_CN_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def _normalize_market_code(value: str | None) -> str | None:
@@ -37,6 +39,47 @@ def _normalize_market_code(value: str | None) -> str | None:
     if normalized in {"crypto"}:
         return "crypto"
     return normalized
+
+
+def _normalize_trade_date(value: Any) -> date | None:
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _latest_available_cn_trade_date(now_utc: datetime | None = None) -> date:
+    now_local = (now_utc or datetime.now(timezone.utc)).astimezone(_CN_TZ)
+    candidate = now_local.date()
+    # 北向资金通常按交易日汇总；当天盘后再要求看到当日数据，盘中以前一个交易日为准。
+    if now_local.hour < 18:
+        candidate -= timedelta(days=1)
+    while candidate.weekday() >= 5:
+        candidate -= timedelta(days=1)
+    return candidate
+
+
+def _northbound_meta(rows: list[dict[str, Any]], market: str, trade_date: date | None) -> dict[str, Any]:
+    latest_trade_date = max((_normalize_trade_date(row.get("trade_date")) for row in rows), default=None)
+    as_of = (
+        datetime.combine(latest_trade_date, time(hour=15, minute=0), tzinfo=_CN_TZ).isoformat()
+        if latest_trade_date is not None
+        else None
+    )
+    stale = latest_trade_date is None or latest_trade_date < _latest_available_cn_trade_date()
+    return {
+        "count": len(rows),
+        "market": market,
+        "trade_date": trade_date,
+        "source": "eod",
+        "stale": stale,
+        "as_of": as_of,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @router.get("/search")
@@ -124,7 +167,7 @@ async def get_kline(
                 "sync_performed": False,
                 "coverage_complete": True,
                 "count": len(data),
-                "local_history_synced": False,
+                "history_synced": False,
             },
         }
 
@@ -167,8 +210,8 @@ async def get_movers(
     snapshots, meta = fetch_stock_snapshot_with_meta(
         market="all" if market == "all" else market,
         limit=max(limit * 5, 50),
-        force_refresh=False,
-        allow_stale=True,
+        force_refresh=True,
+        allow_stale=False,
     )
     if not snapshots:
         raise HTTPException(status_code=502, detail={"error": {"code": "UPSTREAM_UNAVAILABLE", "message": "Failed to load market movers"}})
@@ -198,7 +241,7 @@ async def get_financials(
     period: str = Query("annual", pattern="^(annual|quarterly)$"),
     limit: int = Query(8, ge=1, le=20),
 ) -> dict[str, Any]:
-    frame = fetch_fundamentals(symbol)
+    frame = fetch_fundamentals(symbol, report_type=report_type, period=period)
     if frame.empty:
         return {"data": [], "meta": {"count": 0, "report_type": report_type, "period": period}}
     rows = frame.astype(object).where(pd.notna(frame), None).to_dict("records")
@@ -295,7 +338,7 @@ async def get_northbound(
         await ensure_northbound_flow(db)
         result = await db.execute(text(query), params)
         rows = [dict(row) for row in result.mappings().all()]
-    return {"data": rows, "meta": {"count": len(rows), "market": market, "trade_date": trade_date}}
+    return {"data": rows, "meta": _northbound_meta(rows, market, trade_date)}
 
 
 @router.get("/calendar")

@@ -17,6 +17,8 @@ const mockSyncHistory = vi.fn()
 const mockGetHealth = vi.fn()
 const mockGetObservability = vi.fn()
 const mockGetCacheMaintenance = vi.fn()
+const mockGetDataStatus = vi.fn()
+const mockCleanupCacheMaintenance = vi.fn()
 const mockScrollIntoView = vi.fn()
 
 vi.mock('../api/backtest', () => ({
@@ -38,6 +40,8 @@ vi.mock('../api/system', () => ({
   getHealth: (...args: unknown[]) => mockGetHealth(...args),
   getObservability: (...args: unknown[]) => mockGetObservability(...args),
   getCacheMaintenance: (...args: unknown[]) => mockGetCacheMaintenance(...args),
+  getDataStatus: (...args: unknown[]) => mockGetDataStatus(...args),
+  cleanupCacheMaintenance: (...args: unknown[]) => mockCleanupCacheMaintenance(...args),
 }))
 
 vi.mock('../utils/download', () => ({
@@ -110,6 +114,20 @@ describe('MarketPage', () => {
     mockGetCacheMaintenance.mockResolvedValue({
       market_snapshot_daily: { total_rows: 30, purgeable_rows: 3, retention_days: 45 },
       backtest_cache: { total_rows: 10, expired_rows: 2 },
+    })
+    mockGetDataStatus.mockResolvedValue({
+      data: {
+        provider_health: {
+          summary: { status: 'ok', ok_checks: 6, degraded_checks: 0, error_checks: 0 },
+          checks: [{ name: 'stock_quote_aapl', status: 'ok', details: { provider: 'twelvedata', stale: false } }],
+        },
+        llm: { model: 'gpt-5.3-codex', endpoint_path: '/v1/responses' },
+      },
+      meta: { generated_at: '2026-03-13T00:00:00+00:00', served_from_cache: false },
+    })
+    mockCleanupCacheMaintenance.mockResolvedValue({
+      data: { dry_run: true, deleted_rows: { market_snapshot_daily: 3, backtest_cache: 2 } },
+      meta: {},
     })
     mockRunBacktest.mockResolvedValue({
       data: { equity_curve: [], trades: [], metrics: { total_return: 5 } },
@@ -254,6 +272,16 @@ describe('MarketPage', () => {
     expect(chartHeading.compareDocumentPosition(backtestHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.queryByRole('link', { name: '笔记' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '研究笔记' })).not.toBeInTheDocument()
+  })
+
+  it('exposes provider health and cache cleanup actions in runtime panel', async () => {
+    render(<MarketPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Provider Summary')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '预览清理' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '执行清理' })).toBeInTheDocument()
+    })
   })
 
   it('scrolls smoothly to workspace sections from quick nav links', async () => {

@@ -72,8 +72,8 @@ def test_backtest_lab_full_universe_then_paginate(monkeypatch: pytest.MonkeyPatc
         return (
             candles,
             {
-                "source": "local",
-                "sync_performed": False,
+                "source": "live",
+                "sync_performed": True,
                 "stale": False,
                 "as_of": "2026-03-02T00:00:00+00:00",
             },
@@ -116,10 +116,9 @@ def test_backtest_lab_full_universe_then_paginate(monkeypatch: pytest.MonkeyPatc
     assert resp["meta"]["source"] == "live"
     assert resp["meta"]["stale"] is False
     assert resp["meta"]["as_of"] == "2026-03-02T00:00:00+00:00"
-    assert resp["meta"]["ohlcv_live_symbols"] == 0
-    assert resp["meta"]["ohlcv_local_symbols"] == 120
+    assert resp["meta"]["ohlcv_live_symbols"] == 120
+    assert resp["meta"]["ohlcv_synced_symbols"] == 120
     assert resp["meta"]["ohlcv_failed_symbols"] == 0
-    assert resp["meta"]["ohlcv_local_fallback_symbols"] == 120
     assert len(resp["data"]) == 50
     assert resp["data"][0]["symbol"] == "US00070"
 
@@ -159,8 +158,8 @@ def test_backtest_lab_supports_manual_symbols(monkeypatch: pytest.MonkeyPatch) -
         return (
             candles,
             {
-                "source": "local",
-                "sync_performed": False,
+                "source": "live",
+                "sync_performed": True,
                 "stale": False,
                 "as_of": "2026-03-26T00:00:00+00:00",
             },
@@ -202,19 +201,19 @@ def test_backtest_lab_supports_manual_symbols(monkeypatch: pytest.MonkeyPatch) -
     assert resp["data"][0]["symbol"] == "AAPL"
 
 
-def test_run_backtest_prefers_local_window(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_backtest_returns_live_window_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     candles = _ohlcv_rows()
 
     async def _mock_load_ohlcv_window(**kwargs):
         return (
             candles,
             {
-                "source": "local",
-                "sync_performed": False,
+                "source": "live",
+                "sync_performed": True,
                 "stale": False,
                 "as_of": "2026-03-02T00:00:00+00:00",
-                "provider": "local",
-                "fetch_source": "database",
+                "provider": "yfinance",
+                "fetch_source": "yfinance",
                 "coverage_complete": True,
             },
         )
@@ -237,28 +236,41 @@ def test_run_backtest_prefers_local_window(monkeypatch: pytest.MonkeyPatch) -> N
     )
     resp = asyncio.run(backtest_api.run_backtest(payload))
 
-    assert resp["meta"]["ohlcv_source"] == "local"
-    assert resp["meta"]["sync_performed"] is False
-    assert resp["meta"]["storage_source"] == "local"
+    assert resp["meta"]["ohlcv_source"] == "live"
+    assert resp["meta"]["sync_performed"] is True
+    assert resp["meta"]["storage_source"] == "live"
     assert resp["meta"]["coverage_complete"] is True
+    assert resp["data"]["benchmark_curve"][:3] == [
+        {"date": "2024-01-01", "value": 1000000.0},
+        {"date": "2024-01-02", "value": 1005000.0},
+        {"date": "2024-01-03", "value": 1010000.0},
+    ]
 
 
-def test_run_backtest_rejects_partial_local_window_when_auto_sync_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_backtest_still_requires_live_window_when_auto_sync_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    observed: dict[str, object] = {}
+
     async def _mock_load_ohlcv_window(**kwargs):
+        observed["sync_if_missing"] = kwargs.get("sync_if_missing")
         return (
             _ohlcv_rows().iloc[:5],
             {
-                "source": "local",
+                "source": "live",
                 "sync_performed": False,
                 "stale": False,
                 "as_of": "2026-03-02T00:00:00+00:00",
-                "provider": "local",
-                "fetch_source": "database_partial",
+                "provider": "yfinance",
+                "fetch_source": "yfinance",
                 "coverage_complete": False,
             },
         )
 
     monkeypatch.setattr(backtest_api, "load_ohlcv_window", _mock_load_ohlcv_window)
+    monkeypatch.setattr(
+        backtest_api.BacktestEngine,
+        "run",
+        lambda self, df, symbol, asset_type: {"metrics": {"total_return": 10.0}, "equity_curve": [], "trades": []},
+    )
 
     payload = backtest_api.BacktestRequest(
         symbol="aapl",
@@ -271,11 +283,12 @@ def test_run_backtest_rejects_partial_local_window_when_auto_sync_disabled(monke
         sync_if_missing=False,
     )
 
-    with pytest.raises(HTTPException) as exc:
-        asyncio.run(backtest_api.run_backtest(payload))
+    resp = asyncio.run(backtest_api.run_backtest(payload))
 
-    assert exc.value.status_code == 409
-    assert exc.value.detail["error"]["code"] == "LOCAL_DATA_INCOMPLETE"
+    assert resp["meta"]["ohlcv_source"] == "live"
+    assert observed["sync_if_missing"] is False
+    assert resp["meta"]["sync_performed"] is False
+    assert resp["meta"]["coverage_complete"] is False
 
 
 def test_run_backtest_rejects_invalid_date_format() -> None:
@@ -314,12 +327,12 @@ def test_compare_backtest_strategies_sorts_rows_by_total_return(monkeypatch: pyt
         return (
             candles,
             {
-                "source": "local",
-                "sync_performed": False,
+                "source": "live",
+                "sync_performed": True,
                 "stale": False,
                 "as_of": "2026-03-02T00:00:00+00:00",
-                "provider": "local",
-                "fetch_source": "database",
+                "provider": "yfinance",
+                "fetch_source": "yfinance",
                 "coverage_complete": True,
             },
         )
@@ -340,7 +353,8 @@ def test_compare_backtest_strategies_sorts_rows_by_total_return(monkeypatch: pyt
                 "max_drawdown": -5.0,
                 "win_rate": 50.0,
                 "trade_count": 4,
-            }
+            },
+            "equity_curve": [{"date": "2024-01-02", "value": 1_000_000 + total_return}],
         }
 
     monkeypatch.setattr(backtest_api, "load_ohlcv_window", _mock_load_ohlcv_window)
@@ -359,8 +373,10 @@ def test_compare_backtest_strategies_sorts_rows_by_total_return(monkeypatch: pyt
     resp = asyncio.run(backtest_api.compare_backtest_strategies(payload))
 
     assert resp["meta"]["count"] == 3
-    assert resp["meta"]["ohlcv_source"] == "local"
+    assert resp["meta"]["ohlcv_source"] == "live"
     assert [row["strategy_name"] for row in resp["data"]] == ["ma_cross", "ema_cross", "buy_hold"]
+    assert [curve["strategy_name"] for curve in resp["curves"]] == ["ma_cross", "ema_cross", "buy_hold"]
+    assert resp["curves"][0]["points"] == [{"date": "2024-01-02", "value": 1000012.0}]
     assert resp["meta"]["ranking_metric"] == "total_return"
 
 
@@ -371,12 +387,12 @@ def test_compare_backtest_strategies_sorts_rows_by_lowest_drawdown(monkeypatch: 
         return (
             candles,
             {
-                "source": "local",
-                "sync_performed": False,
+                "source": "live",
+                "sync_performed": True,
                 "stale": False,
                 "as_of": "2026-03-02T00:00:00+00:00",
-                "provider": "local",
-                "fetch_source": "database",
+                "provider": "yfinance",
+                "fetch_source": "yfinance",
                 "coverage_complete": True,
             },
         )
@@ -404,7 +420,8 @@ def test_compare_backtest_strategies_sorts_rows_by_lowest_drawdown(monkeypatch: 
                 "max_drawdown": max_drawdown,
                 "win_rate": 50.0,
                 "trade_count": 4,
-            }
+            },
+            "equity_curve": [{"date": "2024-01-02", "value": 1_000_000 + total_return}],
         }
 
     monkeypatch.setattr(backtest_api, "load_ohlcv_window", _mock_load_ohlcv_window)
@@ -425,6 +442,7 @@ def test_compare_backtest_strategies_sorts_rows_by_lowest_drawdown(monkeypatch: 
 
     assert resp["meta"]["ranking_metric"] == "max_drawdown"
     assert [row["strategy_name"] for row in resp["data"]] == ["ma_cross", "ema_cross", "buy_hold"]
+    assert [curve["strategy_name"] for curve in resp["curves"]] == ["ma_cross", "ema_cross", "buy_hold"]
 
 
 @pytest.mark.parametrize(

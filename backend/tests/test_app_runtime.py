@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
 from app.services.observability import increment_counter, runtime_observability
+from app.services.runtime_schema import DDL_STATEMENTS
 
 
 def _paths(app) -> set[str]:
@@ -18,9 +19,16 @@ def test_app_defaults_to_core_market_workspace_routes() -> None:
     paths = _paths(app)
 
     assert "/api/v1/market/search" in paths
+    assert "/api/v2/market/search" in paths
+    assert "/api/v2/news/feed" in paths
+    assert "/api/v2/events/calendar" in paths
+    assert "/api/v2/analysis/sentiment" in paths
+    assert "/api/v2/watchlist" in paths
+    assert "/api/v2/system/health" in paths
     assert "/api/v1/market/{symbol}/summary" in paths
     assert "/api/v1/market/quotes" in paths
     assert "/api/v1/backtest/run" in paths
+    assert "/api/v2/backtest/run" in paths
     assert "/health" in paths
     assert "/api/v1/health" in paths
     assert "/api/v1/system/observability" in paths
@@ -56,6 +64,8 @@ def test_observability_endpoint_reports_http_and_market_counters(monkeypatch) ->
 
     quote_resp = client.get("/api/v1/market/BTC/quote")
     assert quote_resp.status_code == 200
+    assert quote_resp.headers["Deprecation"] == "true"
+    assert quote_resp.headers["Link"] == '</api/v2>; rel="successor-version"'
 
     missing_resp = client.get("/api/v1/does-not-exist")
     assert missing_resp.status_code == 404
@@ -143,3 +153,13 @@ def test_cache_maintenance_endpoints_return_summary_and_cleanup(monkeypatch) -> 
     assert cleanup_payload["data"]["dry_run"] is False
     assert cleanup_payload["data"]["deleted_rows"]["market_snapshot_daily"] == 5
     assert cleanup_payload["data"]["deleted_rows"]["backtest_cache"] == 4
+
+
+def test_runtime_schema_bootstrap_includes_news_indexes() -> None:
+    statements = "\n".join(DDL_STATEMENTS)
+
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS idx_news_source_id" in statements
+    assert "CREATE INDEX IF NOT EXISTS idx_news_published" in statements
+    assert "CREATE INDEX IF NOT EXISTS idx_news_unprocessed" in statements
+    assert "CREATE TABLE IF NOT EXISTS market_snapshot_daily" in statements
+    assert "CREATE TABLE IF NOT EXISTS backtest_cache" in statements

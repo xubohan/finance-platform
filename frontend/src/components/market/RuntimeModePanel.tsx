@@ -1,6 +1,7 @@
-import type { CacheMaintenanceResponse, HealthResponse, ObservabilityResponse } from '../../api/system'
+import type { CacheCleanupResponse, CacheMaintenanceResponse, DataStatusResponse, HealthResponse, ObservabilityResponse } from '../../api/system'
 import type { FrontendPerformanceSnapshot } from '../../utils/runtimePerformance'
-import { displayLocaleNumber, displayPercent, displayText } from '../../utils/display'
+import { displayFixed, displayLocaleNumber, displayPercent, displayText } from '../../utils/display'
+import { formatAsOf } from '../../utils/time'
 
 type Props = {
   health: HealthResponse | null
@@ -10,6 +11,13 @@ type Props = {
   frontendPerformance: FrontendPerformanceSnapshot
   cacheMaintenance: CacheMaintenanceResponse | null
   cacheMaintenanceError: string | null
+  dataStatus: DataStatusResponse | null
+  dataStatusError: string | null
+  cacheCleanupResult: CacheCleanupResponse | null
+  cacheCleanupError: string | null
+  cacheCleanupRunning: boolean
+  onPreviewCleanup: () => void
+  onRunCleanup: () => void
 }
 
 function counterValue(observability: ObservabilityResponse | null, name: string): number {
@@ -28,6 +36,13 @@ export default function RuntimeModePanel({
   frontendPerformance,
   cacheMaintenance,
   cacheMaintenanceError,
+  dataStatus,
+  dataStatusError,
+  cacheCleanupResult,
+  cacheCleanupError,
+  cacheCleanupRunning,
+  onPreviewCleanup,
+  onRunCleanup,
 }: Props) {
   const totalRequests = observability?.http?.total_requests ?? 0
   const statusBuckets = observability?.http?.status_buckets ?? {}
@@ -46,6 +61,12 @@ export default function RuntimeModePanel({
   const frontendSlowEvents = frontendPerformance.slow_events ?? []
   const snapshotMaintenance = cacheMaintenance?.market_snapshot_daily
   const backtestMaintenance = cacheMaintenance?.backtest_cache
+  const providerSummary = dataStatus?.data?.provider_health?.summary
+  const providerChecks = dataStatus?.data?.provider_health?.checks ?? []
+  const llmSummary = dataStatus?.data?.llm
+  const stockSample = dataStatus?.data?.stock_quote_aapl
+  const cryptoSample = dataStatus?.data?.crypto_quote_btc
+  const datasets = dataStatus?.data?.datasets
   const summaryMetric = metricValue(frontendPerformance, 'market.summary.load')
   const klineMetric = metricValue(frontendPerformance, 'market.kline.load')
   const backtestMetric = metricValue(frontendPerformance, 'backtest.run')
@@ -187,8 +208,83 @@ export default function RuntimeModePanel({
           )}
         </div>
         <div className="runtime-note-block">
+          <p className="panel-copy runtime-section-title">数据源状态</p>
+          {dataStatusError ? <p className="warn-text">{dataStatusError}</p> : null}
+          <div className="status-grid compact-status-grid">
+            <div className="status-row">
+              <span>Provider Summary</span>
+              <strong>{displayText(providerSummary?.status)}</strong>
+            </div>
+            <div className="status-row">
+              <span>OK / Degraded / Error</span>
+              <strong>
+                {displayLocaleNumber(providerSummary?.ok_checks)} / {displayLocaleNumber(providerSummary?.degraded_checks)} / {displayLocaleNumber(providerSummary?.error_checks)}
+              </strong>
+            </div>
+            <div className="status-row">
+              <span>LLM Model</span>
+              <strong>{displayText(llmSummary?.model)}</strong>
+            </div>
+            <div className="status-row">
+              <span>LLM Endpoint</span>
+              <strong>{displayText(llmSummary?.endpoint_path)}</strong>
+            </div>
+            <div className="status-row">
+              <span>AAPL Runtime</span>
+              <strong>{displayFixed(stockSample?.price)} · {displayText(stockSample?.provider ?? stockSample?.source)}</strong>
+            </div>
+            <div className="status-row">
+              <span>BTC Runtime</span>
+              <strong>{displayFixed(cryptoSample?.price)} · {displayText(cryptoSample?.provider ?? cryptoSample?.source)}</strong>
+            </div>
+            <div className="status-row">
+              <span>News 24h / Total</span>
+              <strong>{displayLocaleNumber(datasets?.news_items_last_24h)} / {displayLocaleNumber(datasets?.news_items_total)}</strong>
+            </div>
+            <div className="status-row">
+              <span>Events 30d / Total</span>
+              <strong>{displayLocaleNumber(datasets?.upcoming_events_30d)} / {displayLocaleNumber(datasets?.market_events_total)}</strong>
+            </div>
+            <div className="status-row">
+              <span>Watchlist Items</span>
+              <strong>{displayLocaleNumber(datasets?.watchlist_items_total)}</strong>
+            </div>
+          </div>
+          {providerChecks.length === 0 ? (
+            <p className="empty-hint">当前没有 provider health 明细。</p>
+          ) : (
+            <div className="runtime-observation-list">
+              {providerChecks.slice(0, 6).map((item) => (
+                <div key={`${item.name}-${item.checked_at}`} className="runtime-observation-row">
+                  <span>
+                    {displayText(item.name)} · {displayText(item.details?.provider ?? item.details?.source, 'unknown')}
+                  </span>
+                  <strong>
+                    {displayText(item.status)} · stale {String(Boolean(item.details?.stale))}
+                  </strong>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="runtime-observation-list">
+            <div className="runtime-observation-row">
+              <span>AAPL as_of</span>
+              <strong>{formatAsOf(stockSample?.as_of)}</strong>
+            </div>
+            <div className="runtime-observation-row">
+              <span>BTC as_of</span>
+              <strong>{formatAsOf(cryptoSample?.as_of)}</strong>
+            </div>
+            <div className="runtime-observation-row">
+              <span>Latest news / event</span>
+              <strong>{formatAsOf(datasets?.latest_news_at)} / {formatAsOf(datasets?.latest_event_at)}</strong>
+            </div>
+          </div>
+        </div>
+        <div className="runtime-note-block">
           <p className="panel-copy runtime-section-title">缓存维护</p>
           {cacheMaintenanceError ? <p className="warn-text">{cacheMaintenanceError}</p> : null}
+          {cacheCleanupError ? <p className="warn-text">{cacheCleanupError}</p> : null}
           <div className="status-grid compact-status-grid">
             <div className="status-row">
               <span>Snapshot 总行数 / 待清理</span>
@@ -206,6 +302,24 @@ export default function RuntimeModePanel({
               <span>Snapshot 保留天数</span>
               <strong>{displayLocaleNumber(snapshotMaintenance?.retention_days)}</strong>
             </div>
+          </div>
+          <div className="status-grid compact-status-grid">
+            <div className="status-row">
+              <span>最近清理模式</span>
+              <strong>{cacheCleanupResult?.dry_run === undefined ? 'none' : cacheCleanupResult.dry_run ? 'dry-run' : 'execute'}</strong>
+            </div>
+            <div className="status-row">
+              <span>删除行数</span>
+              <strong>{displayLocaleNumber(Object.values(cacheCleanupResult?.deleted_rows ?? {}).reduce((sum, value) => sum + Number(value || 0), 0))}</strong>
+            </div>
+          </div>
+          <div className="status-grid compact-status-grid">
+            <button type="button" className="chip" onClick={onPreviewCleanup} disabled={cacheCleanupRunning}>
+              {cacheCleanupRunning ? '处理中...' : '预览清理'}
+            </button>
+            <button type="button" className="chip" onClick={onRunCleanup} disabled={cacheCleanupRunning}>
+              {cacheCleanupRunning ? '处理中...' : '执行清理'}
+            </button>
           </div>
         </div>
         <div className="runtime-note-block">

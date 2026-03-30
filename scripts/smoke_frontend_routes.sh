@@ -43,16 +43,24 @@ curl_with_retry() {
   echo "$code"
 }
 
-echo "[1/2] Check main market route"
-html_file="$TMP_DIR/market.html"
-code="$(curl_with_retry "$html_file" "$BASE_URL/market")"
-if [[ "$code" != "200" ]]; then
-  echo "Route /market failed: HTTP $code"
-  cat "$html_file"
-  exit 1
-fi
+echo "[1/2] Check app shell routes"
+routes=("/" "/news" "/events" "/backtest" "/screener" "/market/AAPL")
 
-python3 - "$html_file" <<'PY'
+for route in "${routes[@]}"; do
+  route_key="$(echo "$route" | sed 's#/#_#g' | sed 's/^_//')"
+  if [[ -z "$route_key" ]]; then
+    route_key="root"
+  fi
+  html_file="$TMP_DIR/${route_key}.html"
+  code="$(curl_with_retry "$html_file" "$BASE_URL$route")"
+  if [[ "$code" != "200" && "$code" != "301" && "$code" != "302" ]]; then
+    echo "Route $route failed: HTTP $code"
+    cat "$html_file"
+    exit 1
+  fi
+done
+
+python3 - "$TMP_DIR/root.html" <<'PY'
 import sys
 
 with open(sys.argv[1], "r", encoding="utf-8", errors="ignore") as fh:
@@ -60,35 +68,30 @@ with open(sys.argv[1], "r", encoding="utf-8", errors="ignore") as fh:
 
 assert 'id="root"' in html
 assert "/assets/" in html
-print("/market ok")
+print("app shell routes ok")
 PY
 
-echo "[2/2] Check legacy routes redirect or render the app shell"
-legacy_routes=(chart screener factors backtest ai)
+echo "[2/2] Check legacy /market compatibility"
+html_file="$TMP_DIR/market_legacy.html"
+headers_file="$TMP_DIR/market_legacy.headers"
+code="$(curl_with_retry "$html_file" -D "$headers_file" "$BASE_URL/market")"
+if [[ "$code" != "200" && "$code" != "301" && "$code" != "302" ]]; then
+  echo "Legacy route /market failed: HTTP $code"
+  cat "$html_file"
+  exit 1
+fi
 
-for route in "${legacy_routes[@]}"; do
-  html_file="$TMP_DIR/${route}.html"
-  headers_file="$TMP_DIR/${route}.headers"
-  code="$(curl_with_retry "$html_file" -D "$headers_file" "$BASE_URL/$route")"
-  if [[ "$code" != "200" && "$code" != "301" && "$code" != "302" ]]; then
-    echo "Legacy route /$route failed: HTTP $code"
-    cat "$html_file"
-    exit 1
-  fi
-
-  python3 - "$headers_file" "$html_file" "$route" <<'PY'
+python3 - "$headers_file" "$html_file" <<'PY'
 import sys
 
 headers = open(sys.argv[1], "r", encoding="utf-8", errors="ignore").read().lower()
 html = open(sys.argv[2], "r", encoding="utf-8", errors="ignore").read()
-route = sys.argv[3]
 
 if "location:" in headers:
-    assert "/market" in headers, f"/{route}: expected redirect to /market"
+    assert "/market/" in headers or "/market/aapl" in headers, "expected redirect to /market/:symbol"
 else:
-    assert 'id="root"' in html, f"/{route}: root node missing"
-print(f"/{route} legacy route ok")
+    assert 'id="root"' in html, "legacy /market root node missing"
+print("/market compatibility ok")
 PY
-done
 
 echo "Frontend route smoke passed."

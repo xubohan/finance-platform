@@ -345,9 +345,10 @@ async def _load_symbol_ohlcv(
         start_date=start_ts.strftime("%Y-%m-%d"),
         end_date=end_ts.strftime("%Y-%m-%d"),
         interval="1d",
+        prefer_local=False,
     )
-    if meta.get("source") == "local" and not bool(meta.get("sync_performed")):
-        return frame, "local"
+    if str(meta.get("source") or "").startswith("persisted") and not bool(meta.get("sync_performed")):
+        return frame, "persisted"
     return frame, "live"
 
 
@@ -476,7 +477,7 @@ async def factors_backtest(
     base["quality_score"] = normalize_factor(base["roe"])
 
     prices_by_symbol: dict[str, pd.Series] = {}
-    local_symbols = 0
+    persisted_symbols = 0
     live_symbols = 0
     for symbol in base.index.tolist():
         hist_df, source = await _load_symbol_ohlcv(db if isinstance(db, AsyncSession) else None, symbol, start_ts, end_ts)
@@ -488,8 +489,8 @@ async def factors_backtest(
         if len(close_series) < 40:
             continue
         prices_by_symbol[symbol] = close_series
-        if source == "local":
-            local_symbols += 1
+        if source == "persisted":
+            persisted_symbols += 1
         else:
             live_symbols += 1
 
@@ -589,13 +590,13 @@ async def factors_backtest(
             "rebalance": payload.rebalance,
             "symbols_fetched": snapshot_count,
             "symbols_used": len(prices_by_symbol),
-            "source": "mixed" if local_symbols > 0 and live_symbols > 0 else ("cache" if local_symbols > 0 else "live"),
+            "source": "live" if live_symbols > 0 else "persisted",
             "stale": bool(snapshot_meta.get("stale")),
             "as_of": snapshot_meta.get("as_of"),
             "cache_age_sec": snapshot_meta.get("cache_age_sec"),
             "cache_hit": cache_hit,
             "ohlcv_live_symbols": live_symbols,
-            "ohlcv_local_symbols": local_symbols,
+            "ohlcv_persisted_symbols": persisted_symbols,
         },
     }
 

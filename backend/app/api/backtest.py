@@ -403,6 +403,27 @@ def _sort_compare_rows(rows: list[dict[str, Any]], ranking_metric: CompareRankin
     return sorted(rows, key=lambda item: float(item.get(ranking_metric, 0) or 0), reverse=True)
 
 
+def _build_benchmark_curve(df: pd.DataFrame, initial_capital: float) -> list[dict[str, float | str]]:
+    if df.empty:
+        return []
+    ordered = df.sort_values("time").reset_index(drop=True)
+    closes = pd.to_numeric(ordered["close"], errors="coerce")
+    first_valid_index = closes.first_valid_index()
+    if first_valid_index is None:
+        return []
+    first_close = float(closes.iloc[first_valid_index])
+    if first_close <= 0:
+        return []
+    curve: list[dict[str, float | str]] = []
+    for index, row in ordered.iterrows():
+        close = closes.iloc[index]
+        if pd.isna(close):
+            continue
+        value = initial_capital * (float(close) / first_close)
+        curve.append({"date": str(row["time"].date()), "value": round(value, 2)})
+    return curve
+
+
 StrategyBuilder = Callable[[dict[str, Any]], Any]
 
 
@@ -653,15 +674,6 @@ async def compare_backtest_strategies(payload: BacktestCompareRequest, db: Async
         end_date=payload.end_date,
         sync_if_missing=payload.sync_if_missing,
     )
-    if not payload.sync_if_missing and not bool(ohlcv_meta.get("coverage_complete")):
-        raise HTTPException(
-            status_code=409,
-            detail=_error(
-                "LOCAL_DATA_INCOMPLETE",
-                "Local history does not fully cover the requested compare window; sync data first or enable auto sync.",
-                {"symbol": symbol, "start_date": payload.start_date, "end_date": payload.end_date},
-            ),
-        )
     if df.empty:
         raise HTTPException(
             status_code=404,
@@ -669,6 +681,7 @@ async def compare_backtest_strategies(payload: BacktestCompareRequest, db: Async
         )
 
     comparison_rows: list[dict[str, Any]] = []
+    comparison_curves: dict[str, dict[str, Any]] = {}
     for name in strategy_names:
         try:
             strategy = _build_strategy(name, payload.parameters_by_strategy.get(name, {}))
@@ -681,15 +694,21 @@ async def compare_backtest_strategies(payload: BacktestCompareRequest, db: Async
         engine = BacktestEngine(strategy=strategy, initial_capital=payload.initial_capital)
         result = engine.run(df=df, symbol=symbol, asset_type=payload.asset_type)
         comparison_rows.append(_compare_row(name, result.get("metrics", {})))
+        comparison_curves[name] = {
+            "strategy_name": name,
+            "label": _strategy_label(name),
+            "points": result.get("equity_curve", []),
+        }
 
     comparison_rows = _sort_compare_rows(comparison_rows, payload.ranking_metric)
-    used_local_only = ohlcv_meta.get("source") == "local" and not bool(ohlcv_meta.get("sync_performed"))
+    ordered_curves = [comparison_curves[row["strategy_name"]] for row in comparison_rows if row["strategy_name"] in comparison_curves]
     return {
         "data": comparison_rows,
+        "curves": ordered_curves,
         "meta": {
             "count": len(comparison_rows),
             "ranking_metric": payload.ranking_metric,
-            "ohlcv_source": "local" if used_local_only else "live",
+            "ohlcv_source": ohlcv_meta.get("source"),
             "storage_source": ohlcv_meta.get("source"),
             "sync_performed": bool(ohlcv_meta.get("sync_performed")),
             "stale": bool(ohlcv_meta.get("stale")),
@@ -742,7 +761,7 @@ async def _load_backtest_ohlcv(
     end_date: str,
     sync_if_missing: bool = True,
 ) -> tuple[Any, dict[str, Any]]:
-    """Load backtest OHLCV window from local store first, syncing when needed."""
+    """Load backtest OHLCV from live upstream data and persist a synced copy."""
     return await load_ohlcv_window(
         db=db,
         symbol=symbol,
@@ -750,6 +769,7 @@ async def _load_backtest_ohlcv(
         start_date=start_date,
         end_date=end_date,
         interval="1d",
+        prefer_local=False,
         sync_if_missing=sync_if_missing,
     )
 
@@ -776,15 +796,6 @@ async def run_backtest(payload: BacktestRequest, db: AsyncSession = Depends(get_
         end_date=payload.end_date,
         sync_if_missing=payload.sync_if_missing,
     )
-    if not payload.sync_if_missing and not bool(ohlcv_meta.get("coverage_complete")):
-        raise HTTPException(
-            status_code=409,
-            detail=_error(
-                "LOCAL_DATA_INCOMPLETE",
-                "Local history does not fully cover the requested backtest window; sync data first or enable auto sync.",
-                {"symbol": symbol, "start_date": payload.start_date, "end_date": payload.end_date},
-            ),
-        )
     if df.empty:
         raise HTTPException(
             status_code=404,
@@ -793,11 +804,11 @@ async def run_backtest(payload: BacktestRequest, db: AsyncSession = Depends(get_
 
     engine = BacktestEngine(strategy=strategy, initial_capital=payload.initial_capital)
     result = engine.run(df=df, symbol=symbol, asset_type=payload.asset_type)
-    used_local_only = ohlcv_meta.get("source") == "local" and not bool(ohlcv_meta.get("sync_performed"))
+    result["benchmark_curve"] = _build_benchmark_curve(df, payload.initial_capital)
     return {
         "data": result,
         "meta": {
-            "ohlcv_source": "local" if used_local_only else "live",
+            "ohlcv_source": ohlcv_meta.get("source"),
             "storage_source": ohlcv_meta.get("source"),
             "sync_performed": bool(ohlcv_meta.get("sync_performed")),
             "stale": bool(ohlcv_meta.get("stale")),
@@ -872,7 +883,7 @@ async def run_backtest_lab(payload: BacktestLabRequest, db: AsyncSession = Depen
     db_session = db if isinstance(db, AsyncSession) else None
     ranked_rows: list[dict[str, Any]] = []
     live_ohlcv_symbols = 0
-    local_ohlcv_symbols = 0
+    synced_ohlcv_symbols = 0
     failed_ohlcv_symbols = 0
 
     for item in snapshot:
@@ -890,10 +901,9 @@ async def run_backtest_lab(payload: BacktestLabRequest, db: AsyncSession = Depen
         if df.empty:
             failed_ohlcv_symbols += 1
             continue
-        if ohlcv_meta.get("source") == "local" and not bool(ohlcv_meta.get("sync_performed")):
-            local_ohlcv_symbols += 1
-        else:
-            live_ohlcv_symbols += 1
+        live_ohlcv_symbols += 1
+        if bool(ohlcv_meta.get("sync_performed")):
+            synced_ohlcv_symbols += 1
 
         try:
             result = engine.run(df=df, symbol=symbol, asset_type="stock")
@@ -933,8 +943,7 @@ async def run_backtest_lab(payload: BacktestLabRequest, db: AsyncSession = Depen
             "as_of": snapshot_meta.get("as_of"),
             "cache_age_sec": snapshot_meta.get("cache_age_sec"),
             "ohlcv_live_symbols": live_ohlcv_symbols,
-            "ohlcv_local_symbols": local_ohlcv_symbols,
+            "ohlcv_synced_symbols": synced_ohlcv_symbols,
             "ohlcv_failed_symbols": failed_ohlcv_symbols,
-            "ohlcv_local_fallback_symbols": local_ohlcv_symbols,
         },
     }

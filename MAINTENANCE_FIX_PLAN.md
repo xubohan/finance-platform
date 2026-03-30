@@ -63,6 +63,10 @@
   - 57 补充完成：页面层会在采用最佳策略后自动触发当前回测，不必再滚到下方单独点运行按钮。
   - 58：策略对比新增本地“最近对比快照”，支持记录并恢复最近几次对比配置。
   - 58 补充完成：成功 compare 后会在页面层记录当前标的下的最近配置，并支持一键恢复策略、对比池和排序指标。
+  - 59：美股单标的报价链路新增腾讯行情回退，默认 provider 顺序调整为 `finnhub -> twelvedata -> tencent -> yfinance -> alphavantage`，在无 key 环境下也能让 `AAPL/QQQ/SPY` 走 live quote 而不是 `yfinance delayed`。
+  - 59 补充完成：已补 `quote_provider_controller` 单测，并在 Docker 运行态验证 `/api/v2/market/AAPL/summary` 与 `/api/v2/market/batch/quotes` 返回 `provider=tencent`, `source=live`, `stale=false`。
+  - 60：补齐前端自动刷新闭环，修复 News/Events/Backtest 页面任务运行中按钮仍可重复提交、旧结果继续占据结果画布、以及 search/history 元信息错配的问题。
+  - 60 补充完成：`NewsCenter/EventsCenter/BacktestWorkbench` 相关 vitest 已通过，前端构建和 `scripts/smoke_frontend_routes.sh` 也已通过。
   - 6：归档运行日志到 `logs/maintenance/compose_backend_nginx_20260306_1754.log`。
   - 17：新增前端关键路由冒烟脚本 `scripts/smoke_frontend_routes.sh`。
   - 19：统一空态文案，修复 `undefined/NaN` 直出。
@@ -76,6 +80,7 @@
   - 26 补充完成：前端运行面板新增摘要刷新、K 线刷新、回测执行、K 线重绘等 runtime 指标与慢事件列表，完成“体积预算 + runtime 阈值”闭环。
   - 27：新增 `/api/v1/system/cache-maintenance` 与清理入口 `/api/v1/system/cache-maintenance/cleanup`，并在运行面板显示 snapshot/backtest cache 待清理数量。
   - 28：新增 `scripts/release_workflow.sh` 与 `docs/release-runbook.md`，把 snapshot/promote/rollback/schema-check/workspace-validation 标准化到仓库内。
+  - 28 补充完成：补齐 `backend/migrations/` Alembic 基线、发布流里的 `alembic upgrade head`、以及 schema gate 对 v2 表和缓存表的显式校验。
   - 30：新增 `scripts/run_workspace_visual_regression.sh`、`frontend/scripts/capture_workspace_visual_regression.mjs`、周度工作流 `.github/workflows/weekly-visual-regression.yml`，并生成稳定 mock-backed 基线 `docs/visual-regression/market_workspace_baseline.json`。
   - 29：将 WSL + Docker Desktop 工作流和 `sg docker` 临时方案补入 `AGENTS.md`。
 - 剩余：无。
@@ -115,7 +120,7 @@
 25. 对 backtest/factors 结果页增加分页状态持久化（刷新后恢复当前页）。已完成单标的 backtest 成交记录分页与 workspace-state 持久化；research-only 页面当前默认未启用。
 26. 增加前端性能预算（首屏 JS 大小、图表重绘耗时、交互延时）。已完成，首屏 JS/CSS 与 lazy chunk 预算已接入 CI，图表重绘/工作台刷新/回测执行的 runtime 指标与慢事件阈值已接入运行面板。
 27. 对数据库缓存表（`market_snapshot_daily`、`backtest_cache`）制定清理策略。已完成，已提供 retention 摘要、dry-run/执行清理入口，以及运行面板可见的待清理计数。
-28. 建立发布清单：构建、迁移、回滚、烟雾验证四步标准化。已完成，当前仓库以 `docker/postgres/init.sql` 基线表检查替代独立 migration step，并提供 snapshot/promote/rollback 脚本。
+28. 建立发布清单：构建、迁移、回滚、烟雾验证四步标准化。已完成，当前仓库同时提供 `docker/postgres/init.sql` 启动基线与 `backend/migrations/` Alembic 升级路径，发布流会先执行 `alembic upgrade head` 再做 schema-check。
 29. 将运行手册补充到 `AGENTS.md`：Docker 组刷新与 `sg docker` 临时方案。已完成。
 30. 每周固定一次“展示错误专项回归”（Chart/Factors/Backtest 三页截图对比）。已完成，当前以 `workspace-overview / workspace-chart / workspace-backtest` 三个区块的稳定 mock-backed 截图基线替代旧独立页面，并已接入周度工作流。
 

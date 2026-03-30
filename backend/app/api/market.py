@@ -8,19 +8,20 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 import pandas as pd
-from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.schemas.market import BatchQuoteRequest, HistorySyncRequest
 from app.services.market_cache import cache_get_json, cache_set_json
 from app.services.observability import increment_counter
-from app.services.ohlcv_store import get_local_ohlcv_summary, load_ohlcv_window, read_local_ohlcv, sync_ohlcv_from_upstream
+from app.services.ohlcv_store import get_local_ohlcv_summary, load_ohlcv_window, sync_ohlcv_from_upstream
 from app.services.openbb_adapter import (
     detect_provider,
     fetch_crypto_realtime_price,
     fetch_ohlcv_with_meta,
     fetch_stock_snapshot_with_meta,
+    fetch_stock_realtime_quote,
     fetch_stock_symbols_with_meta,
 )
 
@@ -31,21 +32,6 @@ CRYPTO_QUOTE_STALE_TTL_SECONDS = 15 * 60
 CRYPTO_QUOTE_RETRY_ATTEMPTS = 3
 CRYPTO_QUOTE_RETRY_BACKOFF_SECONDS = 0.25
 QUOTE_LOOKBACK_DAYS = 10
-QUOTE_LOCAL_MAX_AGE_DAYS = 5
-
-
-class HistorySyncRequest(BaseModel):
-    """Manual sync request for local OHLCV coverage."""
-
-    start_date: str
-    end_date: str
-    period: str = Field("1d", pattern="^(1d)$")
-
-
-class BatchQuoteRequest(BaseModel):
-    """Batch quote request for watchlist-style workloads."""
-
-    symbols: list[str] = Field(default_factory=list, min_length=1, max_length=25)
 
 
 def _error(code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -176,23 +162,8 @@ async def _load_stock_quote_frame(
     *,
     end_date: str,
 ) -> tuple[Any, dict[str, Any]]:
-    """Load stock quote bars with a looser local-hit rule than full chart coverage."""
+    """Load stock quote bars from live upstream data and persist them locally."""
     start_date = (date.fromisoformat(end_date) - timedelta(days=QUOTE_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
-    local_df = await read_local_ohlcv(db, symbol, "stock", start_date, end_date)
-    if len(local_df) >= 2:
-        last_time = pd.to_datetime(local_df["time"].iloc[-1], utc=True)
-        cutoff = pd.to_datetime(end_date, utc=True) - pd.Timedelta(days=QUOTE_LOCAL_MAX_AGE_DAYS)
-        if last_time >= cutoff:
-            return local_df, {
-                "source": "local",
-                "stale": False,
-                "as_of": last_time.isoformat(),
-                "provider": "local",
-                "fetch_source": "database",
-                "sync_performed": False,
-                "coverage_complete": True,
-            }
-
     synced_df, live_meta = await sync_ohlcv_from_upstream(
         db=db,
         symbol=symbol,
@@ -203,7 +174,7 @@ async def _load_stock_quote_frame(
     )
     if synced_df.empty:
         return synced_df, {
-            "source": live_meta.get("source"),
+            "source": live_meta.get("source") or "upstream",
             "stale": live_meta.get("stale"),
             "as_of": live_meta.get("as_of"),
             "provider": live_meta.get("provider"),
@@ -212,26 +183,76 @@ async def _load_stock_quote_frame(
             "coverage_complete": False,
         }
 
-    reread_df = await read_local_ohlcv(db, symbol, "stock", start_date, end_date)
-    if len(reread_df) >= 2:
-        last_time = pd.to_datetime(reread_df["time"].iloc[-1], utc=True)
-        return reread_df, {
-            "source": "local",
-            "stale": False,
-            "as_of": last_time.isoformat(),
-            "provider": live_meta.get("provider"),
-            "fetch_source": live_meta.get("fetch_source"),
-            "sync_performed": True,
-            "coverage_complete": True,
-        }
-
     return synced_df, {
-        "source": live_meta.get("source"),
+        "source": live_meta.get("source") or "upstream",
         "stale": live_meta.get("stale"),
-        "as_of": live_meta.get("as_of"),
+        "as_of": live_meta.get("as_of") or synced_df["time"].iloc[-1].isoformat(),
         "provider": live_meta.get("provider"),
         "fetch_source": live_meta.get("fetch_source"),
         "sync_performed": True,
+        "coverage_complete": len(synced_df) >= 2,
+    }
+
+
+def _build_quote_payload_from_frame(
+    symbol: str,
+    frame: pd.DataFrame,
+    meta: dict[str, Any],
+) -> dict[str, Any]:
+    latest = float(frame.iloc[-1]["close"])
+    prev = float(frame.iloc[-2]["close"]) if len(frame) > 1 else latest
+    change_pct = ((latest - prev) / prev * 100) if prev else 0
+    as_of = str(meta.get("as_of") or frame.iloc[-1]["time"].isoformat())
+    return {
+        "data": {
+            "symbol": symbol,
+            "asset_type": "stock",
+            "price": latest,
+            "change_pct_24h": round(change_pct, 4),
+            "source": meta.get("source"),
+            "as_of": as_of,
+        },
+        "meta": {
+            "source": meta.get("source"),
+            "stale": meta.get("stale"),
+            "as_of": as_of,
+            "provider": meta.get("provider"),
+            "fetch_source": meta.get("fetch_source"),
+            "sync_performed": meta.get("sync_performed"),
+            "coverage_complete": meta.get("coverage_complete"),
+        },
+    }
+
+
+def _load_stock_intraday_quote_frame(symbol: str, *, end_date: str) -> tuple[Any, dict[str, Any]]:
+    """Fallback to intraday OHLCV before degrading all the way to daily bars."""
+    lookback_start = (date.fromisoformat(end_date) - timedelta(days=2)).strftime("%Y-%m-%d")
+    for interval in ("1m", "5m"):
+        frame, meta = fetch_ohlcv_with_meta(
+            symbol=symbol,
+            start_date=lookback_start,
+            end_date=end_date,
+            interval=interval,
+        )
+        if frame.empty:
+            continue
+        return frame, {
+            "source": meta.get("source"),
+            "stale": meta.get("stale"),
+            "as_of": meta.get("as_of") or frame.iloc[-1]["time"].isoformat(),
+            "provider": meta.get("provider"),
+            "fetch_source": meta.get("fetch_source"),
+            "sync_performed": False,
+            "coverage_complete": True,
+            "interval": interval,
+        }
+    return pd.DataFrame(), {
+        "source": None,
+        "stale": None,
+        "as_of": None,
+        "provider": None,
+        "fetch_source": None,
+        "sync_performed": False,
         "coverage_complete": False,
     }
 
@@ -273,8 +294,8 @@ async def search_assets(
         live_universe, stock_meta = fetch_stock_symbols_with_meta(
             market="all",
             limit=600,
-            force_refresh=False,
-            allow_stale=True,
+            force_refresh=True,
+            allow_stale=False,
         )
         if not live_universe and type == "stock":
             increment_counter("market.search.stock.upstream_failure")
@@ -471,7 +492,7 @@ async def get_kline(
         start_date=start,
         end_date=end,
         interval="1d",
-        prefer_local=True,
+        prefer_local=False,
         sync_if_missing=True,
     )
     if latest_df.empty:
@@ -510,7 +531,7 @@ async def get_kline(
             "sync_performed": latest_meta.get("sync_performed"),
             "coverage_complete": latest_meta.get("coverage_complete"),
             "count": len(data),
-            "local_history_synced": bool(latest_meta.get("sync_performed")),
+            "history_synced": bool(latest_meta.get("sync_performed")),
         },
     }
 
@@ -525,59 +546,41 @@ async def get_quote(symbol: str, db: AsyncSession = Depends(get_db)) -> dict[str
     if asset_type == "crypto":
         quote = _fetch_crypto_quote_live(normalized_symbol)
         if isinstance(quote, dict):
+            provider = str(quote.get("provider") or "coingecko")
+            fetch_source = str(quote.get("fetch_source") or provider)
+            quote_source = str(quote.get("source") or "live")
+            quote_stale = bool(quote.get("stale", False))
+            quote_as_of = str(quote.get("as_of") or as_of)
             increment_counter("market.quote.crypto.live_success")
             normalized_quote = {
                 "symbol": normalized_symbol,
                 "asset_type": "crypto",
                 "price": float(quote.get("price") or 0),
                 "change_pct_24h": float(quote.get("change_pct_24h") or 0),
-                "source": "live",
-                "as_of": as_of,
+                "source": quote_source,
+                "as_of": quote_as_of,
+                "provider": provider,
+                "fetch_source": fetch_source,
             }
             _write_crypto_quote_cache(normalized_symbol, normalized_quote)
             return {
                 "data": normalized_quote,
                 "meta": {
-                    "source": "live",
-                    "stale": False,
-                    "as_of": as_of,
-                    "provider": "coingecko",
-                    "fetch_source": "coingecko",
+                    "source": quote_source,
+                    "stale": quote_stale,
+                    "as_of": quote_as_of,
+                    "provider": provider,
+                    "fetch_source": fetch_source,
                     "cache_age_sec": 0,
                 },
             }
 
-        cached_quote, stale = _read_crypto_quote_cache(normalized_symbol, allow_stale=True)
-        if isinstance(cached_quote, dict) and cached_quote.get("price") is not None:
-            cached_as_of = str(cached_quote.get("as_of") or "")
-            increment_counter("market.quote.crypto.cache_fallback")
-            if stale:
-                increment_counter("market.quote.crypto.stale_cache_fallback")
-            return {
-                "data": {
-                    "symbol": normalized_symbol,
-                    "asset_type": "crypto",
-                    "price": float(cached_quote.get("price") or 0),
-                    "change_pct_24h": float(cached_quote.get("change_pct_24h") or 0),
-                    "source": "cache",
-                    "as_of": cached_as_of or as_of,
-                },
-                "meta": {
-                    "source": "cache",
-                    "stale": stale,
-                    "as_of": cached_as_of or as_of,
-                    "provider": "coingecko",
-                    "fetch_source": "cache_fallback",
-                    "cache_age_sec": _cache_age_seconds(cached_as_of),
-                },
-            }
-
-        # Last fallback for first-hit 429 scenarios: derive quote from latest daily close.
+        # Last fallback still fetches upstream data in realtime and derives the latest bar close.
         fallback_df, fallback_meta = fetch_ohlcv_with_meta(
             symbol=normalized_symbol,
-            start_date=(date.today() - timedelta(days=10)).strftime("%Y-%m-%d"),
+            start_date=(date.today() - timedelta(days=2)).strftime("%Y-%m-%d"),
             end_date=date.today().strftime("%Y-%m-%d"),
-            interval="1d",
+            interval="1h",
         )
         if not fallback_df.empty:
             increment_counter("market.quote.crypto.ohlcv_fallback")
@@ -585,23 +588,26 @@ async def get_quote(symbol: str, db: AsyncSession = Depends(get_db)) -> dict[str
             prev = float(fallback_df.iloc[-2]["close"]) if len(fallback_df) > 1 else latest
             change_pct = ((latest - prev) / prev * 100) if prev else 0
             fallback_as_of = fallback_df.iloc[-1]["time"].isoformat()
+            fallback_source = str(fallback_meta.get("source") or "upstream")
             fallback_quote = {
                 "symbol": normalized_symbol,
                 "asset_type": "crypto",
                 "price": latest,
                 "change_pct_24h": round(change_pct, 4),
-                "source": fallback_meta.get("source") or "live",
+                "source": fallback_source,
                 "as_of": fallback_as_of,
+                "provider": fallback_meta.get("provider"),
+                "fetch_source": fallback_meta.get("fetch_source") or "ohlcv_live_fallback",
             }
             _write_crypto_quote_cache(normalized_symbol, fallback_quote)
             return {
                 "data": fallback_quote,
                 "meta": {
-                    "source": fallback_meta.get("source") or "live",
+                    "source": fallback_source,
                     "stale": bool(fallback_meta.get("stale")),
                     "as_of": fallback_meta.get("as_of") or fallback_as_of,
                     "provider": fallback_meta.get("provider"),
-                    "fetch_source": "ohlcv_fallback",
+                    "fetch_source": fallback_meta.get("fetch_source") or "ohlcv_live_fallback",
                     "cache_age_sec": 0,
                 },
             }
@@ -611,6 +617,45 @@ async def get_quote(symbol: str, db: AsyncSession = Depends(get_db)) -> dict[str
             status_code=502,
             detail=_error("UPSTREAM_UNAVAILABLE", "Unable to fetch realtime price", {"symbol": normalized_symbol}),
         )
+
+    provider_quote = fetch_stock_realtime_quote(normalized_symbol)
+    provider_quote_source = str(provider_quote.get("source") or "") if isinstance(provider_quote, dict) else ""
+    provider_quote_stale = bool(provider_quote.get("stale", provider_quote_source != "live")) if isinstance(provider_quote, dict) else False
+    if (
+        isinstance(provider_quote, dict)
+        and provider_quote.get("price") not in (None, 0)
+        and provider_quote_source == "live"
+        and not provider_quote_stale
+    ):
+        live_as_of = str(provider_quote.get("as_of") or as_of)
+        increment_counter("market.quote.stock.live_success")
+        return {
+            "data": {
+                "symbol": normalized_symbol,
+                "asset_type": "stock",
+                "price": float(provider_quote.get("price") or 0),
+                "change_pct_24h": float(provider_quote.get("change_pct_24h") or 0),
+                "source": provider_quote_source,
+                "as_of": live_as_of,
+            },
+            "meta": {
+                "source": provider_quote_source,
+                "stale": provider_quote_stale,
+                "as_of": live_as_of,
+                "provider": provider_quote.get("provider"),
+                "fetch_source": provider_quote.get("fetch_source"),
+                "sync_performed": False,
+                "coverage_complete": True,
+            },
+        }
+
+    intraday_df, intraday_meta = _load_stock_intraday_quote_frame(
+        normalized_symbol,
+        end_date=date.today().strftime("%Y-%m-%d"),
+    )
+    if not intraday_df.empty:
+        increment_counter("market.quote.stock.intraday_fallback")
+        return _build_quote_payload_from_frame(normalized_symbol, intraday_df, intraday_meta)
 
     latest_df, latest_meta = await _load_stock_quote_frame(
         db=db,
@@ -624,37 +669,14 @@ async def get_quote(symbol: str, db: AsyncSession = Depends(get_db)) -> dict[str
             detail=_error("UPSTREAM_UNAVAILABLE", "Failed to fetch latest quote data", {"symbol": normalized_symbol}),
         )
 
-    if latest_meta.get("source") == "local":
-        increment_counter("market.quote.stock.local_success")
-    elif latest_meta.get("sync_performed"):
+    if latest_meta.get("source") == "live" and latest_meta.get("sync_performed"):
         increment_counter("market.quote.stock.synced_success")
-    else:
+    elif latest_meta.get("source") == "live":
         increment_counter("market.quote.stock.live_success")
+    else:
+        increment_counter("market.quote.stock.degraded_success")
 
-    latest = float(latest_df.iloc[-1]["close"])
-    prev = float(latest_df.iloc[-2]["close"]) if len(latest_df) > 1 else latest
-    change_pct = ((latest - prev) / prev * 100) if prev else 0
-    as_of = latest_df.iloc[-1]["time"].isoformat()
-
-    return {
-        "data": {
-            "symbol": normalized_symbol,
-            "asset_type": "stock",
-            "price": latest,
-            "change_pct_24h": round(change_pct, 4),
-            "source": latest_meta.get("source"),
-            "as_of": as_of,
-        },
-        "meta": {
-            "source": latest_meta.get("source"),
-            "stale": latest_meta.get("stale"),
-            "as_of": latest_meta.get("as_of") or as_of,
-            "provider": latest_meta.get("provider"),
-            "fetch_source": latest_meta.get("fetch_source"),
-            "sync_performed": latest_meta.get("sync_performed"),
-            "coverage_complete": latest_meta.get("coverage_complete"),
-        },
-    }
+    return _build_quote_payload_from_frame(normalized_symbol, latest_df, latest_meta)
 
 
 @router.get("/{symbol}/realtime")

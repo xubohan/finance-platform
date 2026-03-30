@@ -1,8 +1,9 @@
-import type { Time } from 'lightweight-charts'
+import type { Time, UTCTimestamp } from 'lightweight-charts'
 
 import client from './client'
 
 export type MarketPeriod = '1d' | '1W' | '1M'
+export type MarketDetailPeriod = '1m' | '5m' | '1h' | MarketPeriod
 export type AssetType = 'stock' | 'crypto'
 export type SearchAssetType = AssetType | 'all'
 
@@ -11,14 +12,14 @@ export type QuoteData = {
   asset_type: AssetType
   price: number
   change_pct_24h: number
-  source?: 'cache' | 'live' | 'mixed' | 'local'
+  source?: 'cache' | 'live' | 'persisted' | 'delayed' | 'eod' | 'upstream'
   as_of?: string | null
 }
 
 export type QuoteResponse = {
   data: QuoteData
   meta?: {
-    source?: 'cache' | 'live' | 'mixed' | 'local'
+    source?: 'cache' | 'live' | 'persisted' | 'delayed' | 'eod' | 'upstream'
     stale?: boolean
     as_of?: string | null
     provider?: string
@@ -34,7 +35,7 @@ export type BatchQuoteRow = {
   price?: number | null
   change_pct_24h?: number | null
   as_of?: string | null
-  source?: 'cache' | 'live' | 'mixed' | 'local' | null
+  source?: 'cache' | 'live' | 'persisted' | null
   fetch_source?: string | null
   stale?: boolean | null
   error?: string | null
@@ -63,9 +64,12 @@ export type KlineResponse = {
   data: KlinePoint[]
   meta?: {
     symbol?: string
-    period?: MarketPeriod
+    period?: MarketDetailPeriod
+    requested_period?: MarketDetailPeriod
+    resolved_period?: MarketDetailPeriod
+    fallback_applied?: boolean
     asset_type?: AssetType
-    source?: 'cache' | 'live' | 'mixed' | 'local'
+    source?: 'cache' | 'live' | 'persisted' | 'delayed' | 'eod' | 'upstream'
     stale?: boolean
     as_of?: string | null
     provider?: string
@@ -96,12 +100,14 @@ export type TopMoverRow = {
   symbol: string
   change_pct: number
   latest: number
+  market?: string
 }
 
 export type TopMoversMeta = {
   count?: number
-  type?: 'stock' | 'crypto'
-  source?: 'cache' | 'live' | 'mixed'
+  market?: 'us' | 'cn' | 'crypto' | 'all'
+  direction?: 'gain' | 'loss'
+  source?: 'cache' | 'live' | 'persisted' | 'delayed' | 'eod' | 'upstream'
   stale?: boolean
   as_of?: string | null
   cache_age_sec?: number | null
@@ -139,6 +145,33 @@ export type MarketSummaryResponse = {
   }
 }
 
+export type FinancialRow = Record<string, string | number | null | boolean>
+export type CnFlowRow = {
+  trade_date: string
+  rzye?: number | null
+  rzmre?: number | null
+  rqyl?: number | null
+  rqmcl?: number | null
+  rzrqye?: number | null
+  super_large_net?: number | null
+  large_net?: number | null
+  medium_net?: number | null
+  small_net?: number | null
+  main_net?: number | null
+  net_buy?: number | null
+  buy_amount?: number | null
+  sell_amount?: number | null
+  hold_amount?: number | null
+}
+
+export type DragonTigerRow = {
+  trade_date: string
+  reason?: string | null
+  net_buy?: number | null
+  buy_amount?: number | null
+  sell_amount?: number | null
+}
+
 export type SyncHistoryResponse = {
   data: {
     symbol: string
@@ -151,7 +184,7 @@ export type SyncHistoryResponse = {
     local_end?: string | null
   } | null
   meta?: {
-    source?: 'cache' | 'live' | 'mixed'
+    source?: 'cache' | 'live' | 'persisted'
     stale?: boolean
     as_of?: string | null
     provider?: string
@@ -168,18 +201,27 @@ export async function getMarketSummary(symbol: string) {
 }
 
 export async function getBatchQuotes(symbols: string[]) {
-  const resp = await client.post('/market/quotes', { symbols })
+  const resp = await client.post('/market/batch/quotes', { symbols })
   return {
     data: resp.data?.data ?? [],
     meta: resp.data?.meta ?? {},
   } as BatchQuoteResponse
 }
 
-export async function getKline(symbol: string, period: MarketPeriod, start?: string, end?: string) {
+export async function getKline(symbol: string, period: MarketDetailPeriod, start?: string, end?: string) {
   const resp = await client.get(`/market/${encodeURIComponent(symbol)}/kline`, {
     params: { period, start, end },
   })
-  return (resp.data ?? {}) as KlineResponse
+  const rawMeta = resp.data?.meta ?? {}
+  return {
+    data: resp.data?.data ?? [],
+    meta: {
+      ...rawMeta,
+      requested_period: period,
+      resolved_period: (rawMeta.resolved_period ?? rawMeta.period ?? period) as MarketDetailPeriod,
+      fallback_applied: rawMeta.fallback_applied === true,
+    },
+  } as KlineResponse
 }
 
 export async function searchAssets(query: string, type: SearchAssetType = 'all', limit = 8) {
@@ -197,9 +239,19 @@ export async function searchAssets(query: string, type: SearchAssetType = 'all',
 }
 
 export async function getTopMovers(type: AssetType, limit = 6) {
-  const resp = await client.get('/market/top-movers', {
+  const market = type === 'crypto' ? 'crypto' : 'us'
+  return getMovers(market, limit)
+}
+
+export async function getMovers(
+  market: 'us' | 'cn' | 'crypto' | 'all',
+  limit = 6,
+  direction: 'gain' | 'loss' = 'gain',
+) {
+  const resp = await client.get('/market/movers', {
     params: {
-      type,
+      market,
+      direction,
       limit,
     },
   })
@@ -221,11 +273,85 @@ export async function syncHistory(symbol: string, startDate: string, endDate: st
   } as SyncHistoryResponse
 }
 
+export async function getFinancials(symbol: string, params?: {
+  report_type?: 'income' | 'balance' | 'cashflow'
+  period?: 'annual' | 'quarterly'
+  limit?: number
+}) {
+  const resp = await client.get(`/market/${encodeURIComponent(symbol)}/financials`, { params })
+  return {
+    data: resp.data?.data ?? [],
+    meta: resp.data?.meta ?? {},
+  } as {
+    data: FinancialRow[]
+    meta: {
+      count?: number
+      report_type?: 'income' | 'balance' | 'cashflow'
+      period?: 'annual' | 'quarterly'
+    }
+  }
+}
+
+export async function getMargin(symbol: string) {
+  const resp = await client.get(`/market/${encodeURIComponent(symbol)}/margin`)
+  return {
+    data: resp.data?.data ?? [],
+    meta: resp.data?.meta ?? {},
+  } as { data: CnFlowRow[]; meta: { count?: number } }
+}
+
+export async function getBigOrderFlow(symbol: string) {
+  const resp = await client.get(`/market/${encodeURIComponent(symbol)}/big-order`)
+  return {
+    data: resp.data?.data ?? [],
+    meta: resp.data?.meta ?? {},
+  } as { data: CnFlowRow[]; meta: { count?: number } }
+}
+
+export async function getDragonTiger(symbol: string) {
+  const resp = await client.get(`/market/${encodeURIComponent(symbol)}/dragon-tiger`)
+  return {
+    data: resp.data?.data ?? [],
+    meta: resp.data?.meta ?? {},
+  } as { data: DragonTigerRow[]; meta: { count?: number } }
+}
+
+export async function getNorthbound(params?: { date?: string; market?: 'sh' | 'sz' | 'all' }) {
+  const resp = await client.get('/market/northbound', { params })
+  return {
+    data: resp.data?.data ?? [],
+    meta: resp.data?.meta ?? {},
+  } as {
+    data: CnFlowRow[]
+    meta: {
+      count?: number
+      market?: 'sh' | 'sz' | 'all'
+      trade_date?: string | null
+      source?: 'eod' | 'persisted' | 'live'
+      stale?: boolean
+      as_of?: string | null
+      generated_at?: string | null
+    }
+  }
+}
+
+function mapPointTime(raw: string): Time {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return raw as Time
+  }
+  const normalized = raw.includes(' ') && !raw.includes('T') ? raw.replace(' ', 'T') : raw
+  const epochMs = Date.parse(normalized)
+  if (Number.isFinite(epochMs)) {
+    return Math.floor(epochMs / 1000) as UTCTimestamp
+  }
+  return raw.slice(0, 10) as Time
+}
+
 export function toCandles(points: KlinePoint[]) {
   return points
     .filter((p) => p.time)
     .map((p) => ({
-      time: p.time.slice(0, 10) as Time,
+      time: mapPointTime(p.time),
       open: Number(p.open),
       high: Number(p.high),
       low: Number(p.low),

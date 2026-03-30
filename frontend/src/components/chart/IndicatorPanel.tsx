@@ -1,16 +1,18 @@
 type Props = {
   selected: string[]
   onToggle: (name: string) => void
+  options?: string[]
+  title?: string
 }
 
-const indicators = ['MA', 'RSI']
+const DEFAULT_INDICATORS = ['MA', 'EMA', 'BOLL', 'RSI']
 
-export default function IndicatorPanel({ selected, onToggle }: Props) {
+export default function IndicatorPanel({ selected, onToggle, options = DEFAULT_INDICATORS, title = 'Indicators' }: Props) {
   return (
     <div className="indicator-panel">
-      <h3>Indicators</h3>
+      <h3>{title}</h3>
       <div className="indicator-grid">
-        {indicators.map((name) => {
+        {options.map((name) => {
           const active = selected.includes(name)
           return (
             <button

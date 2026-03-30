@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-finpass}
       POSTGRES_DB: ${DB_NAME:-finterminal}
     ports:
-      - "5432:5432"
+      - "${DB_HOST_PORT:-55432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -34,9 +34,40 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       ENABLE_RESEARCH_APIS: ${ENABLE_RESEARCH_APIS:-false}
       ENABLE_AI_API: ${ENABLE_AI_API:-false}
+      ENABLE_LLM_ANALYSIS: ${ENABLE_LLM_ANALYSIS:-true}
+      ENABLE_NEWS_FETCH: ${ENABLE_NEWS_FETCH:-true}
+      ENABLE_CN_DATA: ${ENABLE_CN_DATA:-true}
+      INITIALIZE_RUNTIME_SCHEMA: ${INITIALIZE_RUNTIME_SCHEMA:-true}
       AI_SERVICE_URL: ${AI_SERVICE_URL:-http://ai_service:8001}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/1}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/2}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com}
+      LLM_MODEL: ${LLM_MODEL:-gpt-5.3-codex}
+      LLM_API_STYLE: ${LLM_API_STYLE:-responses}
+      LLM_ENDPOINT_PATH: ${LLM_ENDPOINT_PATH:-/v1/responses}
+      LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT:-medium}
+      LLM_TEXT_VERBOSITY: ${LLM_TEXT_VERBOSITY:-low}
+      LLM_TIMEOUT_SEC: ${LLM_TIMEOUT_SEC:-60}
+      QUOTE_PROVIDER_TIMEOUT_SEC: ${QUOTE_PROVIDER_TIMEOUT_SEC:-6}
+      QUOTE_PROVIDER_USER_AGENT: ${QUOTE_PROVIDER_USER_AGENT:-finance-platform/0.1}
+      CRYPTO_QUOTE_PROVIDER_ORDER: ${CRYPTO_QUOTE_PROVIDER_ORDER:-binance,kraken,coinbase,coingecko}
+      STOCK_QUOTE_PROVIDER_ORDER: ${STOCK_QUOTE_PROVIDER_ORDER:-finnhub,twelvedata,tencent,yfinance,alphavantage}
+      STOCK_OHLCV_PROVIDER_ORDER: ${STOCK_OHLCV_PROVIDER_ORDER:-twelvedata,yfinance,stooq}
+      CRYPTO_BINANCE_BASE_URL: ${CRYPTO_BINANCE_BASE_URL:-https://api.binance.com}
+      CRYPTO_KRAKEN_BASE_URL: ${CRYPTO_KRAKEN_BASE_URL:-https://api.kraken.com}
+      CRYPTO_COINBASE_BASE_URL: ${CRYPTO_COINBASE_BASE_URL:-https://api.exchange.coinbase.com}
+      CRYPTO_COINGECKO_BASE_URL: ${CRYPTO_COINGECKO_BASE_URL:-https://api.coingecko.com}
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      FINNHUB_BASE_URL: ${FINNHUB_BASE_URL:-https://finnhub.io/api/v1}
+      TWELVEDATA_API_KEY: ${TWELVEDATA_API_KEY:-}
+      TWELVEDATA_BASE_URL: ${TWELVEDATA_BASE_URL:-https://api.twelvedata.com}
+      TENCENT_QUOTE_BASE_URL: ${TENCENT_QUOTE_BASE_URL:-https://qt.gtimg.cn/q=}
+      ALPHAVANTAGE_API_KEY: ${ALPHAVANTAGE_API_KEY:-}
+      ALPHAVANTAGE_BASE_URL: ${ALPHAVANTAGE_BASE_URL:-https://www.alphavantage.co/query}
+      ALPHAVANTAGE_ENTITLEMENT: ${ALPHAVANTAGE_ENTITLEMENT:-}
+      CRYPTOPANIC_API_KEY: ${CRYPTOPANIC_API_KEY:-}
+      TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
     depends_on:
       db:
         condition: service_healthy
@@ -56,11 +87,86 @@ services:
   celery_worker:
     build: ./backend
     command: celery -A tasks.celery_app.celery_app worker --loglevel=info --concurrency=2
-    profiles: ["experimental"]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://finuser:finpass@db:5432/finterminal}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/1}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/2}
+      INITIALIZE_RUNTIME_SCHEMA: ${INITIALIZE_RUNTIME_SCHEMA:-true}
+      ENABLE_LLM_ANALYSIS: ${ENABLE_LLM_ANALYSIS:-true}
+      ENABLE_NEWS_FETCH: ${ENABLE_NEWS_FETCH:-true}
+      ENABLE_CN_DATA: ${ENABLE_CN_DATA:-true}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com}
+      LLM_MODEL: ${LLM_MODEL:-gpt-5.3-codex}
+      LLM_API_STYLE: ${LLM_API_STYLE:-responses}
+      LLM_ENDPOINT_PATH: ${LLM_ENDPOINT_PATH:-/v1/responses}
+      LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT:-medium}
+      LLM_TEXT_VERBOSITY: ${LLM_TEXT_VERBOSITY:-low}
+      LLM_TIMEOUT_SEC: ${LLM_TIMEOUT_SEC:-60}
+      QUOTE_PROVIDER_TIMEOUT_SEC: ${QUOTE_PROVIDER_TIMEOUT_SEC:-6}
+      QUOTE_PROVIDER_USER_AGENT: ${QUOTE_PROVIDER_USER_AGENT:-finance-platform/0.1}
+      CRYPTO_QUOTE_PROVIDER_ORDER: ${CRYPTO_QUOTE_PROVIDER_ORDER:-binance,kraken,coinbase,coingecko}
+      STOCK_QUOTE_PROVIDER_ORDER: ${STOCK_QUOTE_PROVIDER_ORDER:-finnhub,twelvedata,tencent,yfinance,alphavantage}
+      STOCK_OHLCV_PROVIDER_ORDER: ${STOCK_OHLCV_PROVIDER_ORDER:-twelvedata,yfinance,stooq}
+      CRYPTO_BINANCE_BASE_URL: ${CRYPTO_BINANCE_BASE_URL:-https://api.binance.com}
+      CRYPTO_KRAKEN_BASE_URL: ${CRYPTO_KRAKEN_BASE_URL:-https://api.kraken.com}
+      CRYPTO_COINBASE_BASE_URL: ${CRYPTO_COINBASE_BASE_URL:-https://api.exchange.coinbase.com}
+      CRYPTO_COINGECKO_BASE_URL: ${CRYPTO_COINGECKO_BASE_URL:-https://api.coingecko.com}
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      FINNHUB_BASE_URL: ${FINNHUB_BASE_URL:-https://finnhub.io/api/v1}
+      TWELVEDATA_API_KEY: ${TWELVEDATA_API_KEY:-}
+      TWELVEDATA_BASE_URL: ${TWELVEDATA_BASE_URL:-https://api.twelvedata.com}
+      TENCENT_QUOTE_BASE_URL: ${TENCENT_QUOTE_BASE_URL:-https://qt.gtimg.cn/q=}
+      ALPHAVANTAGE_API_KEY: ${ALPHAVANTAGE_API_KEY:-}
+      ALPHAVANTAGE_BASE_URL: ${ALPHAVANTAGE_BASE_URL:-https://www.alphavantage.co/query}
+      ALPHAVANTAGE_ENTITLEMENT: ${ALPHAVANTAGE_ENTITLEMENT:-}
+      CRYPTOPANIC_API_KEY: ${CRYPTOPANIC_API_KEY:-}
+      TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  celery_beat:
+    build: ./backend
+    command: celery -A tasks.celery_app.celery_app beat --loglevel=info
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://finuser:finpass@db:5432/finterminal}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/1}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/2}
+      INITIALIZE_RUNTIME_SCHEMA: ${INITIALIZE_RUNTIME_SCHEMA:-true}
+      ENABLE_LLM_ANALYSIS: ${ENABLE_LLM_ANALYSIS:-true}
+      ENABLE_NEWS_FETCH: ${ENABLE_NEWS_FETCH:-true}
+      ENABLE_CN_DATA: ${ENABLE_CN_DATA:-true}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com}
+      LLM_MODEL: ${LLM_MODEL:-gpt-5.3-codex}
+      LLM_API_STYLE: ${LLM_API_STYLE:-responses}
+      LLM_ENDPOINT_PATH: ${LLM_ENDPOINT_PATH:-/v1/responses}
+      LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT:-medium}
+      LLM_TEXT_VERBOSITY: ${LLM_TEXT_VERBOSITY:-low}
+      LLM_TIMEOUT_SEC: ${LLM_TIMEOUT_SEC:-60}
+      QUOTE_PROVIDER_TIMEOUT_SEC: ${QUOTE_PROVIDER_TIMEOUT_SEC:-6}
+      QUOTE_PROVIDER_USER_AGENT: ${QUOTE_PROVIDER_USER_AGENT:-finance-platform/0.1}
+      CRYPTO_QUOTE_PROVIDER_ORDER: ${CRYPTO_QUOTE_PROVIDER_ORDER:-binance,kraken,coinbase,coingecko}
+      STOCK_QUOTE_PROVIDER_ORDER: ${STOCK_QUOTE_PROVIDER_ORDER:-finnhub,twelvedata,tencent,yfinance,alphavantage}
+      STOCK_OHLCV_PROVIDER_ORDER: ${STOCK_OHLCV_PROVIDER_ORDER:-twelvedata,yfinance,stooq}
+      CRYPTO_BINANCE_BASE_URL: ${CRYPTO_BINANCE_BASE_URL:-https://api.binance.com}
+      CRYPTO_KRAKEN_BASE_URL: ${CRYPTO_KRAKEN_BASE_URL:-https://api.kraken.com}
+      CRYPTO_COINBASE_BASE_URL: ${CRYPTO_COINBASE_BASE_URL:-https://api.exchange.coinbase.com}
+      CRYPTO_COINGECKO_BASE_URL: ${CRYPTO_COINGECKO_BASE_URL:-https://api.coingecko.com}
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      FINNHUB_BASE_URL: ${FINNHUB_BASE_URL:-https://finnhub.io/api/v1}
+      TWELVEDATA_API_KEY: ${TWELVEDATA_API_KEY:-}
+      TWELVEDATA_BASE_URL: ${TWELVEDATA_BASE_URL:-https://api.twelvedata.com}
+      TENCENT_QUOTE_BASE_URL: ${TENCENT_QUOTE_BASE_URL:-https://qt.gtimg.cn/q=}
+      ALPHAVANTAGE_API_KEY: ${ALPHAVANTAGE_API_KEY:-}
+      ALPHAVANTAGE_BASE_URL: ${ALPHAVANTAGE_BASE_URL:-https://www.alphavantage.co/query}
+      ALPHAVANTAGE_ENTITLEMENT: ${ALPHAVANTAGE_ENTITLEMENT:-}
+      CRYPTOPANIC_API_KEY: ${CRYPTOPANIC_API_KEY:-}
+      TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
     depends_on:
       db:
         condition: service_healthy

@@ -25,6 +25,10 @@ Commands:
 EOF
 }
 
+run_backend_shell() {
+  run_compose exec -T backend sh -lc "$*"
+}
+
 run_compose() {
   if docker compose version >/dev/null 2>&1 && docker compose ps >/dev/null 2>&1; then
     docker compose "$@"
@@ -111,10 +115,18 @@ schema_check() {
 SELECT
   to_regclass('public.assets') IS NOT NULL AS assets_ok,
   to_regclass('public.ohlcv_daily') IS NOT NULL AS ohlcv_ok,
+  to_regclass('public.news_items') IS NOT NULL AS news_items_ok,
+  to_regclass('public.market_events') IS NOT NULL AS market_events_ok,
+  to_regclass('public.watchlist_items') IS NOT NULL AS watchlist_items_ok,
+  to_regclass('public.llm_analysis_cache') IS NOT NULL AS llm_analysis_cache_ok,
   to_regclass('public.market_snapshot_daily') IS NOT NULL AS market_snapshot_daily_ok,
   to_regclass('public.backtest_cache') IS NOT NULL AS backtest_cache_ok;
 "
   run_compose exec -T db psql -U "${DB_USER:-finuser}" -d "${DB_NAME:-finterminal}" -P pager=off -x -c "$query"
+}
+
+run_db_migrations() {
+  run_backend_shell "cd /app && alembic upgrade head"
 }
 
 archive_release_logs() {
@@ -134,19 +146,22 @@ promote_release() {
   mkdir -p "$target_dir"
 
   echo "Pre-release snapshot: $snapshot_path"
-  echo "[promote 1/5] Build and start core stack"
+  echo "[promote 1/6] Build and start core stack"
   run_compose up -d --build "${CORE_SERVICES[@]}"
 
-  echo "[promote 2/5] Verify schema baseline"
+  echo "[promote 2/6] Run Alembic migrations"
+  run_db_migrations | tee "$target_dir/alembic_upgrade.log"
+
+  echo "[promote 3/6] Verify schema baseline"
   schema_check | tee "$target_dir/schema_check.txt"
 
-  echo "[promote 3/5] Run workspace validation"
+  echo "[promote 4/6] Run workspace validation"
   bash "$ROOT_DIR/scripts/run_workspace_validation.sh" | tee "$target_dir/workspace_validation.log"
 
-  echo "[promote 4/5] Archive runtime evidence"
+  echo "[promote 5/6] Archive runtime evidence"
   archive_release_logs "$target_dir"
 
-  echo "[promote 5/5] Save snapshot pointer"
+  echo "[promote 6/6] Save snapshot pointer"
   cp "$snapshot_path" "$target_dir/pre_release_state.json"
   echo "Release promote flow completed: $target_dir"
 }

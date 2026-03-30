@@ -16,7 +16,15 @@ def test_market_quote_crypto_returns_unified_shape(monkeypatch) -> None:
     monkeypatch.setattr(
         market_api,
         "fetch_crypto_realtime_price",
-        lambda symbols: {"BTC": {"price": 68000.5, "change_pct_24h": 2.31}},
+        lambda symbols: {
+            "BTC": {
+                "price": 68000.5,
+                "change_pct_24h": 2.31,
+                "provider": "binance",
+                "fetch_source": "binance",
+                "as_of": "2026-03-25T12:00:00+00:00",
+            }
+        },
     )
 
     resp = asyncio.run(market_api.get_quote("BTC", db=None))
@@ -26,10 +34,13 @@ def test_market_quote_crypto_returns_unified_shape(monkeypatch) -> None:
     assert resp["data"]["price"] == 68000.5
     assert resp["meta"]["source"] == "live"
     assert resp["meta"]["stale"] is False
+    assert resp["meta"]["provider"] == "binance"
+    assert resp["meta"]["fetch_source"] == "binance"
 
 
 def test_market_quote_stock_returns_unified_shape(monkeypatch) -> None:
     monkeypatch.setattr(market_api, "detect_provider", lambda symbol: ("stock", "yfinance"))
+    monkeypatch.setattr(market_api, "fetch_stock_realtime_quote", lambda symbol: {})
     frame = pd.DataFrame(
         {
             "time": pd.to_datetime(["2026-03-02", "2026-03-03"], utc=True),
@@ -44,12 +55,12 @@ def test_market_quote_stock_returns_unified_shape(monkeypatch) -> None:
         return (
             frame,
             {
-                "source": "local",
+                "source": "live",
                 "stale": False,
                 "as_of": "2026-03-03T00:00:00+00:00",
-                "provider": "local",
-                "fetch_source": "database",
-                "sync_performed": False,
+                "provider": "yfinance",
+                "fetch_source": "yfinance",
+                "sync_performed": True,
                 "coverage_complete": True,
             },
         )
@@ -61,14 +72,15 @@ def test_market_quote_stock_returns_unified_shape(monkeypatch) -> None:
     assert resp["data"]["symbol"] == "AAPL"
     assert resp["data"]["asset_type"] == "stock"
     assert resp["data"]["price"] == 104.0
-    assert resp["meta"]["source"] == "local"
-    assert resp["meta"]["provider"] == "local"
-    assert resp["meta"]["fetch_source"] == "database"
-    assert resp["meta"]["sync_performed"] is False
+    assert resp["meta"]["source"] == "live"
+    assert resp["meta"]["provider"] == "yfinance"
+    assert resp["meta"]["fetch_source"] == "yfinance"
+    assert resp["meta"]["sync_performed"] is True
 
 
-def test_market_quote_stock_prefers_recent_local_rows_without_sync(monkeypatch) -> None:
+def test_market_quote_stock_syncs_live_ohlcv_before_fallback(monkeypatch) -> None:
     monkeypatch.setattr(market_api, "detect_provider", lambda symbol: ("stock", "yfinance"))
+    monkeypatch.setattr(market_api, "fetch_stock_realtime_quote", lambda symbol: {})
     today = market_api.date.today()
     frame = pd.DataFrame(
         {
@@ -82,22 +94,182 @@ def test_market_quote_stock_prefers_recent_local_rows_without_sync(monkeypatch) 
     )
     sync_calls: list[dict[str, object]] = []
 
-    async def _mock_read_local_ohlcv(db, symbol, asset_type, start, end):
-        return frame
-
     async def _mock_sync(*args, **kwargs):
         sync_calls.append({"args": args, "kwargs": kwargs})
-        return frame, {"source": "live", "stale": False, "as_of": None, "provider": "yfinance", "fetch_source": "openbb"}
+        return frame, {"source": "live", "stale": False, "as_of": None, "provider": "yfinance", "fetch_source": "yfinance"}
 
-    monkeypatch.setattr(market_api, "read_local_ohlcv", _mock_read_local_ohlcv)
     monkeypatch.setattr(market_api, "sync_ohlcv_from_upstream", _mock_sync)
 
     resp = asyncio.run(market_api.get_quote("AAPL", db=None))
 
-    assert resp["meta"]["source"] == "local"
-    assert resp["meta"]["fetch_source"] == "database"
+    assert resp["meta"]["source"] == "live"
+    assert resp["meta"]["fetch_source"] == "yfinance"
+    assert resp["meta"]["sync_performed"] is True
+    assert len(sync_calls) == 1
+
+
+def test_market_quote_stock_uses_live_provider_before_local_fallback(monkeypatch) -> None:
+    monkeypatch.setattr(market_api, "detect_provider", lambda symbol: ("stock", "yfinance"))
+    monkeypatch.setattr(
+        market_api,
+        "fetch_stock_realtime_quote",
+        lambda symbol: {
+            "symbol": symbol,
+            "price": 199.75,
+            "change_pct_24h": 1.48,
+            "as_of": "2026-03-25T13:50:00+00:00",
+            "provider": "twelvedata",
+            "fetch_source": "twelvedata",
+            "source": "live",
+            "stale": False,
+        },
+    )
+
+    async def _fail_load_stock_quote_frame(**kwargs):
+        raise AssertionError("_load_stock_quote_frame should not run when live stock quote is available")
+
+    monkeypatch.setattr(market_api, "_load_stock_quote_frame", _fail_load_stock_quote_frame)
+
+    resp = asyncio.run(market_api.get_quote("AAPL", db=None))
+
+    assert resp["data"]["symbol"] == "AAPL"
+    assert resp["data"]["asset_type"] == "stock"
+    assert resp["data"]["price"] == 199.75
+    assert resp["meta"]["source"] == "live"
+    assert resp["meta"]["provider"] == "twelvedata"
+    assert resp["meta"]["fetch_source"] == "twelvedata"
+
+
+def test_market_quote_stock_ignores_non_live_provider_until_live_ohlcv_fallback(monkeypatch) -> None:
+    monkeypatch.setattr(market_api, "detect_provider", lambda symbol: ("stock", "yfinance"))
+    monkeypatch.setattr(
+        market_api,
+        "fetch_stock_realtime_quote",
+        lambda symbol: {
+            "symbol": symbol,
+            "price": 198.25,
+            "change_pct_24h": -0.25,
+            "as_of": "2026-03-25T00:00:00+00:00",
+            "provider": "alphavantage",
+            "fetch_source": "alphavantage_eod",
+            "source": "eod",
+            "stale": True,
+        },
+    )
+    frame = pd.DataFrame(
+        {
+            "time": pd.to_datetime(["2026-03-24", "2026-03-25"], utc=True),
+            "open": [196.0, 198.0],
+            "high": [199.0, 201.0],
+            "low": [195.0, 197.5],
+            "close": [198.0, 200.0],
+            "volume": [1000.0, 1200.0],
+        }
+    )
+
+    async def _mock_quote_frame(**kwargs):
+        return (
+            frame,
+            {
+                "source": "live",
+                "stale": False,
+                "as_of": "2026-03-25T00:00:00+00:00",
+                "provider": "yfinance",
+                "fetch_source": "yfinance",
+                "sync_performed": True,
+                "coverage_complete": True,
+            },
+        )
+
+    monkeypatch.setattr(market_api, "_load_stock_quote_frame", _mock_quote_frame)
+
+    resp = asyncio.run(market_api.get_quote("AAPL", db=None))
+
+    assert resp["data"]["price"] == 200.0
+    assert resp["meta"]["source"] == "live"
+    assert resp["meta"]["fetch_source"] == "yfinance"
+
+
+def test_market_quote_stock_uses_intraday_fallback_before_daily_history(monkeypatch) -> None:
+    monkeypatch.setattr(market_api, "detect_provider", lambda symbol: ("stock", "yfinance"))
+    monkeypatch.setattr(
+        market_api,
+        "fetch_stock_realtime_quote",
+        lambda symbol: {
+            "symbol": symbol,
+            "price": 198.25,
+            "change_pct_24h": -0.25,
+            "as_of": "2026-03-25T00:00:00+00:00",
+            "provider": "yfinance",
+            "fetch_source": "yfinance",
+            "source": "delayed",
+            "stale": True,
+        },
+    )
+    intraday_frame = pd.DataFrame(
+        {
+            "time": pd.to_datetime(["2026-03-25T15:59:00+00:00", "2026-03-25T16:00:00+00:00"], utc=True),
+            "open": [199.0, 200.0],
+            "high": [200.0, 201.0],
+            "low": [198.5, 199.5],
+            "close": [200.0, 201.5],
+            "volume": [1000.0, 1200.0],
+        }
+    )
+
+    def _mock_intraday(symbol: str, start_date: str, end_date: str, interval: str):
+        assert symbol == "AAPL"
+        assert interval == "1m"
+        return intraday_frame, {
+            "source": "delayed",
+            "stale": True,
+            "as_of": "2026-03-25T16:00:00+00:00",
+            "provider": "yfinance",
+            "fetch_source": "yfinance",
+        }
+
+    async def _fail_daily_history(**kwargs):
+        raise AssertionError("_load_stock_quote_frame should not run when intraday fallback is available")
+
+    monkeypatch.setattr(market_api, "fetch_ohlcv_with_meta", _mock_intraday)
+    monkeypatch.setattr(market_api, "_load_stock_quote_frame", _fail_daily_history)
+
+    resp = asyncio.run(market_api.get_quote("AAPL", db=None))
+
+    assert resp["data"]["price"] == 201.5
+    assert resp["data"]["as_of"] == "2026-03-25T16:00:00+00:00"
+    assert resp["meta"]["source"] == "delayed"
+    assert resp["meta"]["fetch_source"] == "yfinance"
     assert resp["meta"]["sync_performed"] is False
-    assert sync_calls == []
+
+
+def test_market_quote_stock_rejects_non_live_provider_when_live_fallback_is_empty(monkeypatch) -> None:
+    monkeypatch.setattr(market_api, "detect_provider", lambda symbol: ("stock", "yfinance"))
+    monkeypatch.setattr(
+        market_api,
+        "fetch_stock_realtime_quote",
+        lambda symbol: {
+            "symbol": symbol,
+            "price": 198.25,
+            "change_pct_24h": -0.25,
+            "as_of": "2026-03-25T00:00:00+00:00",
+            "provider": "alphavantage",
+            "fetch_source": "alphavantage_eod",
+            "source": "eod",
+            "stale": True,
+        },
+    )
+
+    async def _mock_quote_frame(**kwargs):
+        return pd.DataFrame(), {"source": None, "stale": None, "as_of": None, "provider": None, "fetch_source": None}
+
+    monkeypatch.setattr(market_api, "_load_stock_quote_frame", _mock_quote_frame)
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(market_api.get_quote("AAPL", db=None))
+
+    assert exc.value.status_code == 502
+    assert exc.value.detail["error"]["code"] == "UPSTREAM_UNAVAILABLE"
 
 
 def test_market_kline_returns_meta_fields(monkeypatch) -> None:
@@ -116,12 +288,12 @@ def test_market_kline_returns_meta_fields(monkeypatch) -> None:
         return (
             frame,
             {
-                "source": "local",
+                "source": "live",
                 "stale": False,
                 "as_of": "2026-03-03T00:00:00+00:00",
-                "provider": "local",
-                "fetch_source": "database",
-                "sync_performed": False,
+                "provider": "yfinance",
+                "fetch_source": "yfinance",
+                "sync_performed": True,
                 "coverage_complete": True,
             },
         )
@@ -132,10 +304,10 @@ def test_market_kline_returns_meta_fields(monkeypatch) -> None:
 
     assert len(resp["data"]) == 2
     assert resp["meta"]["asset_type"] == "stock"
-    assert resp["meta"]["source"] == "local"
-    assert resp["meta"]["provider"] == "local"
-    assert resp["meta"]["fetch_source"] == "database"
-    assert resp["meta"]["local_history_synced"] is False
+    assert resp["meta"]["source"] == "live"
+    assert resp["meta"]["provider"] == "yfinance"
+    assert resp["meta"]["fetch_source"] == "yfinance"
+    assert resp["meta"]["history_synced"] is True
 
 
 def test_market_kline_resamples_daily_data_for_weekly_period(monkeypatch) -> None:
@@ -155,12 +327,12 @@ def test_market_kline_resamples_daily_data_for_weekly_period(monkeypatch) -> Non
         return (
             frame,
             {
-                "source": "local",
+                "source": "live",
                 "stale": False,
                 "as_of": "2026-03-06T00:00:00+00:00",
-                "provider": "local",
-                "fetch_source": "database",
-                "sync_performed": False,
+                "provider": "yfinance",
+                "fetch_source": "yfinance",
+                "sync_performed": True,
                 "coverage_complete": True,
             },
         )
@@ -217,7 +389,7 @@ def test_market_summary_returns_quote_and_history_payload(monkeypatch) -> None:
                 "change_pct_24h": 1.96,
                 "as_of": "2026-03-03T00:00:00+00:00",
             },
-            "meta": {"source": "local", "fetch_source": "database", "stale": False},
+            "meta": {"source": "live", "fetch_source": "yfinance", "stale": False},
         }
 
     monkeypatch.setattr(market_api, "get_local_ohlcv_summary", _mock_summary)
@@ -228,7 +400,7 @@ def test_market_summary_returns_quote_and_history_payload(monkeypatch) -> None:
     assert resp["data"]["symbol"] == "AAPL"
     assert resp["data"]["quote"]["price"] == 104.0
     assert resp["data"]["history_status"]["local_rows"] == 252
-    assert resp["meta"]["quote"]["source"] == "local"
+    assert resp["meta"]["quote"]["source"] == "live"
     assert resp["meta"]["quote_error"] is None
 
 
@@ -309,7 +481,7 @@ def test_market_sync_history_rejects_invalid_date_range() -> None:
     assert exc.value.detail["error"]["code"] == "INVALID_DATE_RANGE"
 
 
-def test_market_quote_crypto_falls_back_to_fresh_cache(monkeypatch) -> None:
+def test_market_quote_crypto_ignores_cache_and_uses_live_ohlcv_fallback(monkeypatch) -> None:
     monkeypatch.setattr(market_api, "detect_provider", lambda symbol: ("crypto", "coinbase"))
     monkeypatch.setattr(market_api, "fetch_crypto_realtime_price", lambda symbols: {})
     monkeypatch.setattr(market_api.time, "sleep", lambda _: None)
@@ -322,54 +494,52 @@ def test_market_quote_crypto_falls_back_to_fresh_cache(monkeypatch) -> None:
             "price": 70123.45,
             "change_pct_24h": 1.23,
             "as_of": "2026-03-06T08:00:00+00:00",
+        },
+    )
+    monkeypatch.setattr(market_api, "cache_set_json", lambda key, payload, ttl_seconds: None)
+    frame = pd.DataFrame(
+        {
+            "time": pd.to_datetime(["2026-03-06T08:00:00Z", "2026-03-06T09:00:00Z"], utc=True),
+            "open": [70000.0, 70200.0],
+            "high": [70300.0, 70500.0],
+            "low": [69950.0, 70100.0],
+            "close": [70220.0, 70450.0],
+            "volume": [1200.0, 1300.0],
         }
-        if ":fresh:" in key
-        else None,
+    )
+    monkeypatch.setattr(
+        market_api,
+        "fetch_ohlcv_with_meta",
+        lambda **kwargs: (
+            frame,
+            {"source": "live", "stale": False, "as_of": "2026-03-06T09:00:00+00:00", "provider": "binance", "fetch_source": "binance"},
+        ),
     )
 
     resp = asyncio.run(market_api.get_quote("BTC", db=None))
 
     assert resp["data"]["symbol"] == "BTC"
-    assert resp["data"]["price"] == 70123.45
-    assert resp["meta"]["source"] == "cache"
+    assert resp["data"]["price"] == 70450.0
+    assert resp["meta"]["source"] == "live"
     assert resp["meta"]["stale"] is False
-    assert resp["meta"]["fetch_source"] == "cache_fallback"
+    assert resp["meta"]["fetch_source"] == "binance"
 
 
-def test_market_quote_crypto_falls_back_to_stale_cache(monkeypatch) -> None:
+def test_market_quote_crypto_returns_502_without_live_source_even_if_cache_exists(monkeypatch) -> None:
     monkeypatch.setattr(market_api, "detect_provider", lambda symbol: ("crypto", "coinbase"))
     monkeypatch.setattr(market_api, "fetch_crypto_realtime_price", lambda symbols: {})
     monkeypatch.setattr(market_api.time, "sleep", lambda _: None)
-
-    def _mock_cache_get(key: str):
-        if ":fresh:" in key:
-            return None
-        if ":stale:" in key:
-            return {
-                "symbol": "BTC",
-                "asset_type": "crypto",
-                "price": 69999.0,
-                "change_pct_24h": -0.5,
-                "as_of": "2026-03-06T07:55:00+00:00",
-            }
-        return None
-
-    monkeypatch.setattr(market_api, "cache_get_json", _mock_cache_get)
-
-    resp = asyncio.run(market_api.get_quote("BTC", db=None))
-
-    assert resp["data"]["symbol"] == "BTC"
-    assert resp["data"]["price"] == 69999.0
-    assert resp["meta"]["source"] == "cache"
-    assert resp["meta"]["stale"] is True
-    assert resp["meta"]["fetch_source"] == "cache_fallback"
-
-
-def test_market_quote_crypto_returns_502_without_cache(monkeypatch) -> None:
-    monkeypatch.setattr(market_api, "detect_provider", lambda symbol: ("crypto", "coinbase"))
-    monkeypatch.setattr(market_api, "fetch_crypto_realtime_price", lambda symbols: {})
-    monkeypatch.setattr(market_api.time, "sleep", lambda _: None)
-    monkeypatch.setattr(market_api, "cache_get_json", lambda key: None)
+    monkeypatch.setattr(
+        market_api,
+        "cache_get_json",
+        lambda key: {
+            "symbol": "BTC",
+            "asset_type": "crypto",
+            "price": 69999.0,
+            "change_pct_24h": -0.5,
+            "as_of": "2026-03-06T07:55:00+00:00",
+        },
+    )
     monkeypatch.setattr(market_api, "fetch_ohlcv_with_meta", lambda **kwargs: (pd.DataFrame(), {}))
 
     with pytest.raises(HTTPException) as exc:
@@ -409,10 +579,10 @@ def test_market_quote_crypto_uses_ohlcv_fallback_when_cache_empty(monkeypatch) -
     assert resp["data"]["symbol"] == "BTC"
     assert resp["data"]["asset_type"] == "crypto"
     assert resp["data"]["price"] == 69500.0
-    assert resp["meta"]["fetch_source"] == "ohlcv_fallback"
+    assert resp["meta"]["fetch_source"] == "ohlcv_live_fallback"
 
 
-def test_market_search_uses_cache_friendly_stock_symbols(monkeypatch) -> None:
+def test_market_search_uses_live_stock_symbols(monkeypatch) -> None:
     calls: list[dict[str, object]] = []
 
     def _mock_symbols_with_meta(market: str, limit: int, force_refresh: bool = False, allow_stale: bool = True):
@@ -429,7 +599,7 @@ def test_market_search_uses_cache_friendly_stock_symbols(monkeypatch) -> None:
                 {"symbol": "AAPL", "name": "Apple Inc.", "asset_type": "stock", "market": "US"},
                 {"symbol": "MSFT", "name": "Microsoft", "asset_type": "stock", "market": "US"},
             ],
-            {"source": "cache", "stale": False, "as_of": "2026-03-12T00:00:00+00:00", "cache_age_sec": 8},
+            {"source": "live", "stale": False, "as_of": "2026-03-12T00:00:00+00:00", "cache_age_sec": 0},
         )
 
     monkeypatch.setattr(market_api, "fetch_stock_symbols_with_meta", _mock_symbols_with_meta)
@@ -437,8 +607,8 @@ def test_market_search_uses_cache_friendly_stock_symbols(monkeypatch) -> None:
     resp = asyncio.run(market_api.search_assets(q="AAP", type="stock", limit=8, db=None))
 
     assert resp["data"][0]["symbol"] == "AAPL"
-    assert resp["meta"]["source"] == "cache"
-    assert calls == [{"market": "all", "limit": 600, "force_refresh": False, "allow_stale": True}]
+    assert resp["meta"]["source"] == "live"
+    assert calls == [{"market": "all", "limit": 600, "force_refresh": True, "allow_stale": False}]
 
 
 def test_market_top_movers_defaults_to_cache_friendly_snapshot(monkeypatch) -> None:
@@ -482,8 +652,8 @@ def test_market_batch_quotes_aggregates_rows_and_failures(monkeypatch) -> None:
                     "as_of": "2026-03-12T00:00:00+00:00",
                 },
                 "meta": {
-                    "source": "local",
-                    "fetch_source": "database",
+                    "source": "live",
+                    "fetch_source": "yfinance",
                     "stale": False,
                 },
             }
@@ -503,6 +673,6 @@ def test_market_batch_quotes_aggregates_rows_and_failures(monkeypatch) -> None:
     assert resp["meta"]["failed_count"] == 1
     assert resp["meta"]["failed_symbols"] == ["BTC"]
     assert resp["data"][0]["symbol"] == "AAPL"
-    assert resp["data"][0]["source"] == "local"
+    assert resp["data"][0]["source"] == "live"
     assert resp["data"][1]["symbol"] == "BTC"
     assert resp["data"][1]["error"] == "Unable to fetch realtime price"

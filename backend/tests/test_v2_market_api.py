@@ -12,7 +12,8 @@ from app.api.v2 import market as market_v2
 from tests._v2_testutils import FakeResult, QueueAsyncSession, make_client
 
 
-def test_v2_market_northbound_parses_trade_date() -> None:
+def test_v2_market_northbound_parses_trade_date(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(market_v2, "_latest_available_cn_trade_date", lambda now_utc=None: date(2026, 3, 20))
     session = QueueAsyncSession(
         [
             FakeResult(
@@ -34,7 +35,11 @@ def test_v2_market_northbound_parses_trade_date() -> None:
     resp = client.get("/api/v2/market/northbound", params={"date": "2026-03-20", "market": "sh"})
 
     assert resp.status_code == 200
-    assert resp.json()["meta"]["trade_date"] == "2026-03-20"
+    payload = resp.json()
+    assert payload["meta"]["trade_date"] == "2026-03-20"
+    assert payload["meta"]["source"] == "eod"
+    assert payload["meta"]["stale"] is False
+    assert payload["meta"]["as_of"].startswith("2026-03-20T15:00:00")
     assert session.calls[0]["params"]["trade_date"] == date(2026, 3, 20)
     assert session.calls[0]["params"]["market"] == "SH"
 
@@ -118,3 +123,38 @@ def test_v2_market_kline_intraday_returns_502_when_upstream_empty(monkeypatch: p
     )
     assert resp.status_code == 502
     assert resp.json()["detail"]["error"]["code"] == "UPSTREAM_UNAVAILABLE"
+
+
+def test_v2_market_financials_passes_report_type_and_period(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, str] = {}
+
+    def _fake_fetch_fundamentals(symbol: str, report_type: str = "income", period: str = "annual") -> pd.DataFrame:
+        captured["symbol"] = symbol
+        captured["report_type"] = report_type
+        captured["period"] = period
+        return pd.DataFrame(
+            [
+                {"report_date": "2024-09-30", "report_period": "Q3", "净利润": 100.0},
+                {"report_date": "2024-06-30", "report_period": "Q2", "净利润": 80.0},
+            ]
+        )
+
+    monkeypatch.setattr(market_v2, "fetch_fundamentals", _fake_fetch_fundamentals)
+
+    client = make_client(db_session=QueueAsyncSession([]))
+    resp = client.get(
+        "/api/v2/market/600519.SH/financials",
+        params={"report_type": "cashflow", "period": "quarterly", "limit": 1},
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert captured == {
+        "symbol": "600519.SH",
+        "report_type": "cashflow",
+        "period": "quarterly",
+    }
+    assert payload["meta"]["report_type"] == "cashflow"
+    assert payload["meta"]["period"] == "quarterly"
+    assert payload["meta"]["count"] == 1
+    assert payload["data"][0]["report_period"] == "Q3"

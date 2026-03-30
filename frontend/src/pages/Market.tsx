@@ -420,6 +420,12 @@ export default function MarketPage() {
     observabilityError,
     cacheMaintenance,
     cacheMaintenanceError,
+    dataStatus,
+    dataStatusError,
+    cacheCleanupResult,
+    cacheCleanupError,
+    cacheCleanupRunning,
+    runCacheCleanup,
   } = useWorkspaceDiscovery(searchInput, searchScope)
   const {
     quote,
@@ -1190,6 +1196,7 @@ export default function MarketPage() {
       rsiPeriod,
       oversold,
       overbought,
+      multiplier: oversold,
       initialCapital,
       backtestStartDate,
       backtestEndDate,
@@ -1213,6 +1220,7 @@ export default function MarketPage() {
       rsiPeriod,
       oversold,
       overbought,
+      multiplier: oversold,
       initialCapital,
       backtestStartDate,
       backtestEndDate,
@@ -1238,6 +1246,7 @@ export default function MarketPage() {
             item.rsiPeriod === nextSnapshot.rsiPeriod &&
             item.oversold === nextSnapshot.oversold &&
             item.overbought === nextSnapshot.overbought &&
+            item.multiplier === nextSnapshot.multiplier &&
             item.initialCapital === nextSnapshot.initialCapital &&
             item.backtestStartDate === nextSnapshot.backtestStartDate &&
             item.backtestEndDate === nextSnapshot.backtestEndDate &&
@@ -1346,6 +1355,17 @@ export default function MarketPage() {
             frontendPerformance={frontendPerformance}
             cacheMaintenance={cacheMaintenance}
             cacheMaintenanceError={cacheMaintenanceError}
+            dataStatus={dataStatus}
+            dataStatusError={dataStatusError}
+            cacheCleanupResult={cacheCleanupResult}
+            cacheCleanupError={cacheCleanupError}
+            cacheCleanupRunning={cacheCleanupRunning}
+            onPreviewCleanup={() => {
+              void runCacheCleanup(true)
+            }}
+            onRunCleanup={() => {
+              void runCacheCleanup(false)
+            }}
           />
         </aside>
 

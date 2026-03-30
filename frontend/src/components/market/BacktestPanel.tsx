@@ -19,6 +19,7 @@ import {
   isThresholdStrategy,
   type BacktestStrategyName,
 } from '../../utils/backtestStrategies'
+import { fallbackStrategyMode } from '../../utils/backtestParameters'
 import { displayFixed, displayPercent, displayText } from '../../utils/display'
 import { formatAsOf } from '../../utils/time'
 import EquityCurve from '../backtest/EquityCurve'
@@ -68,15 +69,6 @@ type Props = {
   onExportCompareCsv: () => void
   onExportEquityCurve: () => void
   onExportTrades: () => void
-}
-
-function fallbackStrategyMode(name: BacktestStrategyName): BacktestStrategyCatalogEntry['parameter_mode'] {
-  if (isFastSlowStrategy(name)) return 'fast_slow'
-  if (isOscillatorStrategy(name)) return 'oscillator'
-  if (isThresholdStrategy(name)) return 'threshold'
-  if (isPeriodMultiplierStrategy(name)) return 'period_multiplier'
-  if (name === 'buy_hold') return 'none'
-  return 'special'
 }
 
 const FALLBACK_STRATEGY_CATALOG: BacktestStrategyCatalogEntry[] = BACKTEST_STRATEGIES.map((strategy) => ({

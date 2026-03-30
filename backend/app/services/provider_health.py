@@ -8,9 +8,11 @@ from typing import Any, Callable
 
 import pandas as pd
 
+from app.config import settings
 from app.services.openbb_adapter import (
     fetch_crypto_realtime_price,
     fetch_ohlcv_with_meta,
+    fetch_stock_realtime_price,
     fetch_stock_snapshot_with_meta,
     fetch_stock_symbols_with_meta,
 )
@@ -51,11 +53,11 @@ def _check_wrapper(name: str, runner: Callable[[], dict[str, Any]]) -> dict[str,
     return payload
 
 
-def _stock_snapshot_check() -> dict[str, Any]:
+def _stock_snapshot_check(force_refresh: bool = True) -> dict[str, Any]:
     rows, meta = fetch_stock_snapshot_with_meta(
         market="us",
         limit=20,
-        force_refresh=True,
+        force_refresh=force_refresh,
         allow_stale=False,
     )
     count = len(rows)
@@ -75,11 +77,11 @@ def _stock_snapshot_check() -> dict[str, Any]:
     }
 
 
-def _stock_symbols_check() -> dict[str, Any]:
+def _stock_symbols_check(force_refresh: bool = True) -> dict[str, Any]:
     rows, meta = fetch_stock_symbols_with_meta(
         market="us",
         limit=20,
-        force_refresh=True,
+        force_refresh=force_refresh,
         allow_stale=False,
     )
     count = len(rows)
@@ -107,7 +109,9 @@ def _stock_ohlcv_check(now_utc: datetime) -> dict[str, Any]:
     if count <= 0:
         return {"status": "error", "details": {"rows": 0, "fetch_source": meta.get("fetch_source")}}
     fetch_source = meta.get("fetch_source")
-    status = "ok" if fetch_source == "openbb" else "degraded"
+    source = str(meta.get("source") or "")
+    stale = bool(meta.get("stale", source != "live"))
+    status = "ok" if source == "live" and not stale else "degraded"
     return {
         "status": status,
         "details": {
@@ -115,6 +119,8 @@ def _stock_ohlcv_check(now_utc: datetime) -> dict[str, Any]:
             "rows": count,
             "provider": meta.get("provider"),
             "fetch_source": fetch_source,
+            "source": source,
+            "stale": stale,
             "as_of": meta.get("as_of"),
         },
     }
@@ -125,13 +131,48 @@ def _crypto_quote_check() -> dict[str, Any]:
     item = rows.get("BTC") if isinstance(rows, dict) else None
     if not isinstance(item, dict) or item.get("price") in (None, 0):
         return {"status": "error", "details": {"symbol": "BTC", "price": None}}
+    provider = item.get("provider") or "unknown"
+    source = str(item.get("source") or "live")
+    stale = bool(item.get("stale", source != "live"))
     return {
-        "status": "ok",
+        "status": "ok" if source == "live" and not stale else "degraded",
         "details": {
             "symbol": "BTC",
-            "provider": "coingecko",
+            "provider": provider,
             "price": item.get("price"),
             "change_pct_24h": item.get("change_pct_24h"),
+            "fetch_source": item.get("fetch_source"),
+            "source": source,
+            "stale": stale,
+        },
+    }
+
+
+def _stock_quote_probe_check() -> dict[str, Any]:
+    rows = fetch_stock_realtime_price(["AAPL"])
+    item = rows.get("AAPL") if isinstance(rows, dict) else None
+    if not isinstance(item, dict) or item.get("price") in (None, 0):
+        return {
+            "status": "error",
+            "details": {
+                "symbol": "AAPL",
+                "price": None,
+                "reason": "provider_unavailable",
+                "note": "stock realtime providers unavailable",
+            },
+        }
+    source = str(item.get("source") or "live")
+    stale = bool(item.get("stale", source != "live"))
+    return {
+        "status": "ok" if source == "live" and not stale else "degraded",
+        "details": {
+            "symbol": "AAPL",
+            "provider": item.get("provider"),
+            "price": item.get("price"),
+            "change_pct_24h": item.get("change_pct_24h"),
+            "fetch_source": item.get("fetch_source"),
+            "source": source,
+            "stale": stale,
         },
     }
 
@@ -144,7 +185,9 @@ def _crypto_ohlcv_check(now_utc: datetime) -> dict[str, Any]:
     if count <= 0:
         return {"status": "error", "details": {"rows": 0, "fetch_source": meta.get("fetch_source")}}
     fetch_source = meta.get("fetch_source")
-    status = "ok" if fetch_source == "openbb" else "degraded"
+    source = str(meta.get("source") or "")
+    stale = bool(meta.get("stale", source != "live"))
+    status = "ok" if source == "live" and not stale else "degraded"
     return {
         "status": status,
         "details": {
@@ -152,22 +195,35 @@ def _crypto_ohlcv_check(now_utc: datetime) -> dict[str, Any]:
             "rows": count,
             "provider": meta.get("provider"),
             "fetch_source": fetch_source,
+            "source": source,
+            "stale": stale,
             "as_of": meta.get("as_of"),
         },
     }
 
 
-def run_provider_health_check(now_utc: datetime | None = None) -> dict[str, Any]:
+def run_provider_health_check(
+    now_utc: datetime | None = None,
+    *,
+    force_refresh: bool = True,
+    include_ohlcv_checks: bool = True,
+) -> dict[str, Any]:
     if now_utc is None:
         now_utc = _utc_now()
 
     checks = [
-        _check_wrapper("stock_snapshot_us", _stock_snapshot_check),
-        _check_wrapper("stock_symbols_us", _stock_symbols_check),
-        _check_wrapper("stock_ohlcv_aapl", lambda: _stock_ohlcv_check(now_utc)),
+        _check_wrapper("stock_snapshot_us", lambda: _stock_snapshot_check(force_refresh)),
+        _check_wrapper("stock_symbols_us", lambda: _stock_symbols_check(force_refresh)),
+        _check_wrapper("stock_quote_aapl", _stock_quote_probe_check),
         _check_wrapper("crypto_quote_btc", _crypto_quote_check),
-        _check_wrapper("crypto_ohlcv_btc", lambda: _crypto_ohlcv_check(now_utc)),
     ]
+    if include_ohlcv_checks:
+        checks.extend(
+            [
+                _check_wrapper("stock_ohlcv_aapl", lambda: _stock_ohlcv_check(now_utc)),
+                _check_wrapper("crypto_ohlcv_btc", lambda: _crypto_ohlcv_check(now_utc)),
+            ]
+        )
 
     ok_checks = sum(1 for item in checks if item["status"] == "ok")
     degraded_checks = sum(1 for item in checks if item["status"] == "degraded")

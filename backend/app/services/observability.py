@@ -110,11 +110,11 @@ class RuntimeObservability:
         crypto_failures = int(counters.get("market.quote.crypto.upstream_failure", 0))
         crypto_total = crypto_live + crypto_cache + crypto_ohlcv + crypto_failures
 
-        stock_local = int(counters.get("market.quote.stock.local_success", 0))
+        stock_persisted = int(counters.get("market.quote.stock.persisted_success", 0))
         stock_synced = int(counters.get("market.quote.stock.synced_success", 0))
         stock_live = int(counters.get("market.quote.stock.live_success", 0))
         stock_failures = int(counters.get("market.quote.stock.upstream_failure", 0))
-        stock_total = stock_local + stock_synced + stock_live + stock_failures
+        stock_total = stock_persisted + stock_synced + stock_live + stock_failures
 
         sync_success = int(counters.get("market.sync.success", 0))
         sync_failure = int(counters.get("market.sync.failure", 0))
@@ -142,11 +142,11 @@ class RuntimeObservability:
                 },
                 "stock": {
                     "total": stock_total,
-                    "local_success": stock_local,
+                    "persisted_success": stock_persisted,
                     "synced_success": stock_synced,
                     "live_success": stock_live,
                     "failures": stock_failures,
-                    "local_hit_rate_pct": self._rate(stock_local, stock_total),
+                    "persisted_hit_rate_pct": self._rate(stock_persisted, stock_total),
                     "sync_hit_rate_pct": self._rate(stock_synced, stock_total),
                 },
             },

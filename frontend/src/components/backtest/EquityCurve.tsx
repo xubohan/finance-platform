@@ -8,15 +8,26 @@ type Point = {
   value: number
 }
 
-type Props = {
+type CurveSeries = {
+  id: string
+  label?: string
+  color?: string
+  lineWidth?: number
   points: Point[]
+}
+
+type Props = {
+  points?: Point[]
+  series?: CurveSeries[]
   height?: number
 }
 
-export default function EquityCurve({ points, height = 280 }: Props) {
+const DEFAULT_SERIES_COLORS = ['#0f89c9', '#f97316', '#10b981', '#a855f7', '#ef4444']
+
+export default function EquityCurve({ points = [], series, height = 280 }: Props) {
   const ref = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
-  const lineRef = useRef<ISeriesApi<'Line'> | null>(null)
+  const linesRef = useRef<Array<ISeriesApi<'Line'>>>([])
   const hasFittedRef = useRef(false)
 
   useEffect(() => {
@@ -32,9 +43,7 @@ export default function EquityCurve({ points, height = 280 }: Props) {
       },
     })
 
-    const line = chart.addLineSeries({ color: '#0f89c9', lineWidth: 2 })
     chartRef.current = chart
-    lineRef.current = line
     recordFrontendMetric('chart.equity.init', performance.now() - started, { category: 'render' })
     const onResize = () => {
       if (!ref.current) return
@@ -47,28 +56,55 @@ export default function EquityCurve({ points, height = 280 }: Props) {
       window.removeEventListener('resize', onResize)
       chart.remove()
       chartRef.current = null
-      lineRef.current = null
+      linesRef.current = []
       hasFittedRef.current = false
     }
   }, [height])
 
   useEffect(() => {
-    if (!lineRef.current) return
+    if (!chartRef.current) return
     const started = performance.now()
-    const lineData: LineData[] = points.map((p) => ({
-      time: p.date,
-      value: p.value,
-    }))
-    lineRef.current.setData(lineData)
-    if (lineData.length > 0 && !hasFittedRef.current) {
+    const chart = chartRef.current
+    const resolvedSeries =
+      series && series.length > 0
+        ? series
+        : [
+            {
+              id: 'equity',
+              color: DEFAULT_SERIES_COLORS[0],
+              lineWidth: 2,
+              points,
+            },
+          ]
+
+    linesRef.current.forEach((line) => {
+      chart.removeSeries(line)
+    })
+    linesRef.current = resolvedSeries.map((item, index) =>
+      chart.addLineSeries({
+        color: item.color ?? DEFAULT_SERIES_COLORS[index % DEFAULT_SERIES_COLORS.length],
+        lineWidth: item.lineWidth ?? 2,
+      }),
+    )
+
+    const hasAnyData = resolvedSeries.some((item, index) => {
+      const lineData: LineData[] = item.points.map((point) => ({
+        time: point.date,
+        value: point.value,
+      }))
+      linesRef.current[index]?.setData(lineData)
+      return lineData.length > 0
+    })
+
+    if (hasAnyData && !hasFittedRef.current) {
       chartRef.current?.timeScale().fitContent()
       hasFittedRef.current = true
     }
-    if (lineData.length === 0) {
+    if (!hasAnyData) {
       hasFittedRef.current = false
     }
     recordFrontendMetric('chart.equity.render', performance.now() - started, { category: 'render' })
-  }, [points])
+  }, [points, series])
 
   return <div ref={ref} style={{ width: '100%' }} />
 }

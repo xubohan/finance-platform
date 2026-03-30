@@ -1,27 +1,28 @@
 {
-  "generated_at": "2026-03-22T13:22:26.443Z",
+  "generated_at": "2026-03-26T08:00:00.000Z",
   "viewport": {
     "width": 1440,
     "height": 2200
   },
+  "comparison": {
+    "mode": "dimension_tolerance",
+    "dimension_tolerance_px": 180
+  },
   "sections": {
     "workspace-overview": {
       "file": "workspace-overview.png",
-      "sha256": "57ccf06c6d4348b0b7616944e07061953f2476a5c3c7cb91404e81240b6fbc27",
-      "width": 830,
-      "height": 378
+      "width": 1048,
+      "height": 777
     },
     "workspace-chart": {
       "file": "workspace-chart.png",
-      "sha256": "ca8ac082ec75f25a2676623fe57fe8fa1724a53d1c212322344eba20e35e14d4",
-      "width": 830,
-      "height": 801
+      "width": 1048,
+      "height": 1020
     },
     "workspace-backtest": {
       "file": "workspace-backtest.png",
-      "sha256": "814550f9bed92b43322b056c1ff00a4d57e33b252a3722743566e74444f8f26d",
-      "width": 830,
-      "height": 2057
+      "width": 1048,
+      "height": 2576
     }
   }
 }

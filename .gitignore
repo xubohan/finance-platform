@@ -2,6 +2,7 @@
 ai_req/
 
 # Frontend build/install artifacts
+node_modules/
 frontend/node_modules/
 frontend/dist/
 
@@ -11,3 +12,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+
+# Local runtime artifacts
+logs/releases/release_state_*.json
+logs/visual-regression/

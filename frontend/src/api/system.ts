@@ -2,8 +2,14 @@ import client from './client'
 
 export type HealthResponse = {
   status?: string
-  research_apis?: boolean
-  ai_api?: boolean
+  version?: string
+  features?: {
+    research_apis?: boolean
+    ai_api?: boolean
+    llm_analysis?: boolean
+    news_fetch?: boolean
+    cn_data?: boolean
+  }
 }
 
 export type ObservabilityRoute = {
@@ -92,8 +98,87 @@ export type CacheMaintenanceResponse = {
   backtest_cache?: CacheMaintenanceSummary
 }
 
+export type CacheCleanupResponse = {
+  dry_run?: boolean
+  deleted_rows?: Record<string, number>
+  cutoff_date?: string | null
+}
+
+export type DataStatusSampleQuote = {
+  symbol?: string
+  asset_type?: string
+  status?: string
+  error?: string | null
+  source?: string | null
+  provider?: string | null
+  fetch_source?: string | null
+  stale?: boolean | null
+  as_of?: string | null
+  price?: number | null
+  change_pct_24h?: number | null
+}
+
+export type DataStatusDatasets = {
+  status?: string
+  news_items_total?: number
+  news_items_last_24h?: number
+  latest_news_at?: string | null
+  market_events_total?: number
+  upcoming_events_30d?: number
+  latest_event_at?: string | null
+  watchlist_items_total?: number
+}
+
+export type DataStatusResponse = {
+  data: {
+    provider_health?: {
+      summary?: {
+        status?: string
+        total_checks?: number
+        ok_checks?: number
+        degraded_checks?: number
+        error_checks?: number
+        generated_at?: string
+      }
+      checks?: Array<{
+        name?: string
+        status?: string
+        checked_at?: string
+        latency_ms?: number
+        details?: {
+          source?: string | null
+          provider?: string | null
+          stale?: boolean | null
+          as_of?: string | null
+        }
+      }>
+    }
+    llm?: {
+      configured?: boolean
+      model?: string
+      api_style?: string
+      base_url?: string
+      endpoint_path?: string
+      reasoning_effort?: string
+    }
+    feature_flags?: {
+      enable_news_fetch?: boolean
+      enable_cn_data?: boolean
+      enable_llm_analysis?: boolean
+    }
+    stock_quote_aapl?: DataStatusSampleQuote
+    crypto_quote_btc?: DataStatusSampleQuote
+    datasets?: DataStatusDatasets
+  }
+  meta?: {
+    generated_at?: string
+    served_from_cache?: boolean
+    cache_ttl_sec?: number
+  }
+}
+
 export async function getHealth() {
-  const resp = await client.get('/health')
+  const resp = await client.get('/system/health')
   return (resp.data ?? {}) as HealthResponse
 }
 
@@ -105,4 +190,24 @@ export async function getObservability() {
 export async function getCacheMaintenance() {
   const resp = await client.get('/system/cache-maintenance')
   return (resp.data?.data ?? {}) as CacheMaintenanceResponse
+}
+
+export async function cleanupCacheMaintenance(dryRun = true) {
+  const resp = await client.post('/system/cache-maintenance/cleanup', null, {
+    params: { dry_run: dryRun },
+  })
+  return {
+    data: (resp.data?.data ?? {}) as CacheCleanupResponse,
+    meta: resp.data?.meta ?? {},
+  }
+}
+
+export async function getDataStatus(forceRefresh = false) {
+  const resp = await client.get('/system/data-status', {
+    params: forceRefresh ? { force_refresh: true } : undefined,
+  })
+  return {
+    data: resp.data?.data ?? {},
+    meta: resp.data?.meta ?? {},
+  } as DataStatusResponse
 }

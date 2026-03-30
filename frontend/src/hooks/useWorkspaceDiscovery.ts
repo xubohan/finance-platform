@@ -10,10 +10,14 @@ import {
   type TopMoverRow,
 } from '../api/market'
 import {
+  cleanupCacheMaintenance,
   getCacheMaintenance,
+  getDataStatus,
   getHealth,
   getObservability,
+  type CacheCleanupResponse,
   type CacheMaintenanceResponse,
+  type DataStatusResponse,
   type HealthResponse,
   type ObservabilityResponse,
 } from '../api/system'
@@ -38,6 +42,11 @@ export function useWorkspaceDiscovery(searchInput: string, searchScope: SearchAs
   const [observabilityError, setObservabilityError] = useState<string | null>(null)
   const [cacheMaintenance, setCacheMaintenance] = useState<CacheMaintenanceResponse | null>(null)
   const [cacheMaintenanceError, setCacheMaintenanceError] = useState<string | null>(null)
+  const [dataStatus, setDataStatus] = useState<DataStatusResponse | null>(null)
+  const [dataStatusError, setDataStatusError] = useState<string | null>(null)
+  const [cacheCleanupResult, setCacheCleanupResult] = useState<CacheCleanupResponse | null>(null)
+  const [cacheCleanupError, setCacheCleanupError] = useState<string | null>(null)
+  const [cacheCleanupRunning, setCacheCleanupRunning] = useState(false)
 
   useEffect(() => {
     if (deferredSearch.length < 1) {
@@ -111,10 +120,11 @@ export function useWorkspaceDiscovery(searchInput: string, searchScope: SearchAs
 
     const loadRuntimeState = async () => {
       const started = performance.now()
-      const [healthResp, observabilityResp, cacheMaintenanceResp] = await Promise.allSettled([
+      const [healthResp, observabilityResp, cacheMaintenanceResp, dataStatusResp] = await Promise.allSettled([
         getHealth(),
         getObservability(),
         getCacheMaintenance(),
+        getDataStatus(),
       ])
       if (!active) return
 
@@ -142,10 +152,19 @@ export function useWorkspaceDiscovery(searchInput: string, searchScope: SearchAs
         setCacheMaintenanceError(extractApiError(cacheMaintenanceResp.reason, '加载缓存维护状态失败'))
       }
 
+      if (dataStatusResp.status === 'fulfilled') {
+        setDataStatus(dataStatusResp.value)
+        setDataStatusError(null)
+      } else {
+        setDataStatus(null)
+        setDataStatusError(extractApiError(dataStatusResp.reason, '加载数据状态失败'))
+      }
+
       const hasError =
         healthResp.status !== 'fulfilled' ||
         observabilityResp.status !== 'fulfilled' ||
-        cacheMaintenanceResp.status !== 'fulfilled'
+        cacheMaintenanceResp.status !== 'fulfilled' ||
+        dataStatusResp.status !== 'fulfilled'
       recordFrontendMetric('workspace.runtimeState', performance.now() - started, {
         category: 'network',
         status: hasError ? 'error' : 'success',
@@ -168,6 +187,33 @@ export function useWorkspaceDiscovery(searchInput: string, searchScope: SearchAs
     setSearchError(null)
   }
 
+  const runCacheCleanup = async (dryRun: boolean) => {
+    setCacheCleanupRunning(true)
+    setCacheCleanupError(null)
+    const started = performance.now()
+    try {
+      const result = await cleanupCacheMaintenance(dryRun)
+      setCacheCleanupResult(result.data)
+      const refreshed = await getCacheMaintenance()
+      setCacheMaintenance(refreshed)
+      setCacheMaintenanceError(null)
+      recordFrontendMetric('workspace.cacheCleanup', performance.now() - started, {
+        category: 'interaction',
+        status: 'success',
+      })
+      return result
+    } catch (error) {
+      setCacheCleanupError(extractApiError(error, dryRun ? '缓存清理预览失败' : '缓存清理执行失败'))
+      recordFrontendMetric('workspace.cacheCleanup', performance.now() - started, {
+        category: 'interaction',
+        status: 'error',
+      })
+      throw error
+    } finally {
+      setCacheCleanupRunning(false)
+    }
+  }
+
   return {
     deferredSearch,
     searchLoading,
@@ -185,5 +231,11 @@ export function useWorkspaceDiscovery(searchInput: string, searchScope: SearchAs
     observabilityError,
     cacheMaintenance,
     cacheMaintenanceError,
+    dataStatus,
+    dataStatusError,
+    cacheCleanupResult,
+    cacheCleanupError,
+    cacheCleanupRunning,
+    runCacheCleanup,
   }
 }

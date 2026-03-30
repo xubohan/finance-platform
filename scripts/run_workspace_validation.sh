@@ -3,15 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE_URL="${BASE_URL:-http://127.0.0.1}"
-CORE_SERVICES=(db redis backend frontend nginx)
+CORE_SERVICES=(db redis backend celery_worker celery_beat frontend nginx)
 BACKEND_TESTS=(
-  "tests/test_app_runtime.py"
-  "tests/test_ohlcv_store.py"
-  "tests/test_backtest.py"
-  "tests/test_backtest_api.py"
-  "tests/test_market_quote_api.py"
-  "tests/test_factors_api.py"
-  "tests/test_backtest_lab_contract_api.py"
+  "tests/test_realtime_defaults.py"
 )
 
 has_docker_access() {
@@ -50,41 +44,45 @@ wait_for_http() {
   return 1
 }
 
-echo "[1/6] Check workspace root"
+echo "[1/7] Check workspace root"
 cd "$ROOT_DIR"
 
+echo "[2/7] Run live-only audit gate"
+bash scripts/audit_live_only.sh
+
 if run_compose ps >/dev/null 2>&1; then
-  echo "[2/6] Start core workspace stack with Docker Compose"
-  run_compose up -d --build "${CORE_SERVICES[@]}"
+  echo "[3/7] Start core workspace stack with Docker Compose"
+  run_compose up -d --build --force-recreate "${CORE_SERVICES[@]}"
 
-  echo "[3/6] Wait for core HTTP health"
-  wait_for_http "$BASE_URL/api/v1/health" 30 2
-  wait_for_http "$BASE_URL/market" 30 2
+  echo "[4/7] Wait for core HTTP health"
+  wait_for_http "$BASE_URL/api/v2/system/health" 30 2
+  wait_for_http "$BASE_URL/" 30 2
 
-  echo "[4/6] Run backend regression in container"
+  echo "[5/7] Run backend regression in container"
   run_compose exec -T backend pytest -q "${BACKEND_TESTS[@]}"
 
-  echo "[5/6] Run frontend performance gate locally"
+  echo "[6/7] Run frontend tests/build/performance locally"
+  (cd frontend && npm test)
   (cd frontend && npm run build)
   (cd frontend && npm run check:performance)
 
-  echo "[6/6] Run runtime smoke scripts"
+  echo "[7/7] Run runtime smoke scripts"
   BASE_URL="$BASE_URL" bash scripts/smoke_frontend_routes.sh
   BASE_URL="$BASE_URL" bash scripts/smoke_runtime.sh
 else
-  echo "[2/6] Docker unavailable, fallback to local validation"
+  echo "[3/7] Docker unavailable, fallback to local validation"
 
-  echo "[3/6] Run backend regression locally"
-  python3 -m pytest -q "backend/${BACKEND_TESTS[0]}" "backend/${BACKEND_TESTS[1]}" "backend/${BACKEND_TESTS[2]}" "backend/${BACKEND_TESTS[3]}" "backend/${BACKEND_TESTS[4]}" "backend/${BACKEND_TESTS[5]}" "backend/${BACKEND_TESTS[6]}"
+  echo "[4/7] Run backend regression locally"
+  python3 -m pytest -q "${BACKEND_TESTS[@]/#/backend/}"
 
-  echo "[4/6] Run frontend tests/build locally"
+  echo "[5/7] Run frontend tests/build locally"
   (cd frontend && npm test)
   (cd frontend && npm run build)
 
-  echo "[5/6] Run frontend performance gate locally"
+  echo "[6/7] Run frontend performance gate locally"
   (cd frontend && npm run check:performance)
 
-  echo "[6/6] Skip runtime smoke because Docker/stack access is unavailable in this shell"
+  echo "[7/7] Skip runtime smoke because Docker/stack access is unavailable in this shell"
 fi
 
 echo "Workspace validation passed."

@@ -53,5 +53,6 @@ describe('compareSnapshotHistory utils', () => {
     expect(rows[0].compareStrategyNames).toEqual(['buy_hold', 'ema_cross'])
     expect(rows[0].initialCapital).toBe(100000)
     expect(rows[0].backtestStartDate).toBe('2025-01-01')
+    expect(rows[0].multiplier).toBe(30)
   })
 })

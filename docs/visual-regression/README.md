@@ -1,6 +1,6 @@
-# Visual Regression
+# Live Workspace Capture
 
-This repository uses stable mock-backed captures for weekly workspace regression.
+This repository captures live workspace evidence instead of deterministic visual baselines.
 
 ## Local run
 
@@ -8,22 +8,17 @@ This repository uses stable mock-backed captures for weekly workspace regression
 bash scripts/run_workspace_visual_regression.sh
 ```
 
-To regenerate the committed baseline manifest:
-
-```bash
-WRITE_BASELINE=1 bash scripts/run_workspace_visual_regression.sh
-```
-
 ## What gets captured
 
-- `workspace-overview`
-- `workspace-chart`
-- `workspace-backtest`
+- `/`
+- `/market/AAPL`
+- `/backtest`
 
-## Why mock-backed
+## Live-only contract
 
-The live market workspace renders realtime quotes, timestamps, observability counters, and cache status.
-Those values naturally drift on every run, so screenshot hashes would be noisy and useless.
+- No API interception.
+- No fixed fixtures.
+- No mock/demo data path.
 
-The capture script intercepts the relevant `/api/v1/...` requests and returns fixed fixtures, so only actual
-UI regressions change the visual baseline.
+The script captures full-page screenshots from the real runtime and writes a manifest file alongside them.
+Treat the output as runtime evidence for delivery review, not as a deterministic pixel hash baseline.

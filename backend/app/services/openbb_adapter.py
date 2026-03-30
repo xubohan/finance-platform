@@ -15,6 +15,7 @@ import time
 
 import pandas as pd
 
+from app.config import settings
 from app.services.market_cache import (
     cache_get_json,
     cache_set_json,
@@ -83,6 +84,20 @@ SYMBOLS_STALE_TTL_SECONDS = 24 * 3600
 def _elapsed_ms(start_ts: float) -> int:
     """Elapsed milliseconds for lightweight fetch telemetry."""
     return max(0, int((time.perf_counter() - start_ts) * 1000))
+
+
+def _parse_provider_order(raw: str, *, default: tuple[str, ...], allowed: tuple[str, ...]) -> list[str]:
+    items = [item.strip().lower() for item in str(raw or "").split(",") if item.strip()]
+    if not items:
+        items = list(default)
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if item not in allowed or item in seen:
+            continue
+        seen.add(item)
+        ordered.append(item)
+    return ordered or list(default)
 
 
 def _parse_eastmoney_payload(payload: dict, limit: int) -> list[dict]:
@@ -191,6 +206,24 @@ def _snapshot_meta(source: str, stale: bool, as_of: datetime | None) -> dict[str
         "cache_age_sec": age,
         "refresh_in_progress": False,
     }
+
+
+def _classify_ohlcv_semantics(asset_type: str, fetch_source: str, interval: OHLCVInterval) -> tuple[str, bool]:
+    normalized_source = str(fetch_source or "").lower()
+    normalized_asset_type = str(asset_type or "").lower()
+    if normalized_asset_type == "crypto":
+        if normalized_source in {"binance", "kraken", "coinbase", "coingecko", "yfinance"}:
+            return "live", False
+        return "upstream", False
+    if normalized_source in {"twelvedata", "alphavantage_realtime"}:
+        return "live", False
+    if normalized_source in {"yfinance", "alphavantage_delayed"}:
+        return "delayed", True
+    if normalized_source in {"alphavantage_eod", "stooq", "akshare"}:
+        return "eod", True
+    if interval in INTRADAY_INTERVALS:
+        return "delayed", True
+    return "eod", True
 
 
 def _eastmoney_market_fs(market: Literal["us", "cn"]) -> str:
@@ -815,7 +848,7 @@ def fetch_stock_snapshot_with_meta(
     limit: int = 100,
     *,
     force_refresh: bool = False,
-    allow_stale: bool = True,
+    allow_stale: bool = False,
 ) -> tuple[list[dict], dict[str, Any]]:
     """Fetch latest stock snapshot rows with cache/source metadata."""
     started = time.perf_counter()
@@ -885,7 +918,7 @@ def fetch_stock_snapshot(
     limit: int = 100,
     *,
     force_refresh: bool = False,
-    allow_stale: bool = True,
+    allow_stale: bool = False,
 ) -> list[dict]:
     """Fetch latest stock snapshot rows by market (with local cache)."""
     rows, _ = fetch_stock_snapshot_with_meta(
@@ -901,7 +934,7 @@ def fetch_stock_universe_total_with_meta(
     market: Literal["us", "cn", "all"] = "us",
     *,
     force_refresh: bool = False,
-    allow_stale: bool = True,
+    allow_stale: bool = False,
 ) -> tuple[int, dict[str, Any]]:
     """Fetch universe total with cache/source metadata."""
     started = time.perf_counter()
@@ -966,7 +999,7 @@ def fetch_stock_universe_total(
     market: Literal["us", "cn", "all"] = "us",
     *,
     force_refresh: bool = False,
-    allow_stale: bool = True,
+    allow_stale: bool = False,
 ) -> int:
     """Fetch total available symbols for market."""
     total, _ = fetch_stock_universe_total_with_meta(
@@ -982,7 +1015,7 @@ def fetch_stock_symbols_with_meta(
     limit: int = 100,
     *,
     force_refresh: bool = False,
-    allow_stale: bool = True,
+    allow_stale: bool = False,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Fetch latest stock symbols by market with cache/source metadata."""
     started = time.perf_counter()
@@ -1067,7 +1100,7 @@ def fetch_stock_symbols(
     limit: int = 100,
     *,
     force_refresh: bool = False,
-    allow_stale: bool = True,
+    allow_stale: bool = False,
 ) -> list[dict]:
     """Fetch latest stock symbols by market."""
     rows, _ = fetch_stock_symbols_with_meta(
@@ -1357,6 +1390,7 @@ def _fetch_ohlcv_yfinance(
         end=end_inclusive,
         interval=_interval_to_yfinance(interval),
         auto_adjust=False,
+        prepost=interval in INTRADAY_INTERVALS,
         progress=False,
         threads=False,
     )
@@ -1365,6 +1399,50 @@ def _fetch_ohlcv_yfinance(
         return pd.DataFrame()
 
     return df.reset_index()
+
+
+def _fetch_ohlcv_twelvedata_daily(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+) -> pd.DataFrame:
+    import requests
+
+    api_key = str(settings.twelvedata_api_key or "").strip()
+    if not api_key:
+        return pd.DataFrame()
+
+    response = requests.get(
+        f"{settings.twelvedata_base_url.rstrip('/')}/time_series",
+        params={
+            "symbol": symbol.upper().strip(),
+            "interval": "1day",
+            "start_date": start_date,
+            "end_date": end_date,
+            "outputsize": 5000,
+            "apikey": api_key,
+            "format": "JSON",
+        },
+        timeout=10,
+        headers={"User-Agent": "finance-platform/0.1"},
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict) or payload.get("status") == "error":
+        return pd.DataFrame()
+
+    values = payload.get("values")
+    if not isinstance(values, list) or not values:
+        return pd.DataFrame()
+
+    frame = pd.DataFrame(values)
+    if frame.empty:
+        return frame
+
+    frame["time"] = pd.to_datetime(frame["datetime"], utc=True, errors="coerce")
+    for column in ["open", "high", "low", "close", "volume"]:
+        frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    return frame[["time", "open", "high", "low", "close", "volume"]]
 
 
 def _fetch_ohlcv_stooq(
@@ -1517,6 +1595,39 @@ def fetch_ohlcv_with_meta(
             source = "akshare"
         except Exception as exc:
             logger.warning("AKShare fetch_ohlcv failed for %s, fallback to yfinance: %s", symbol, exc)
+    elif asset_type == "stock":
+        provider_order = _parse_provider_order(
+            settings.stock_ohlcv_provider_order,
+            default=("twelvedata", "yfinance", "stooq"),
+            allowed=("twelvedata", "yfinance", "stooq"),
+        )
+        for stock_provider in provider_order:
+            try:
+                if stock_provider == "twelvedata" and interval == "1d":
+                    df = _fetch_ohlcv_twelvedata_daily(symbol, start_date, end_date)
+                elif stock_provider == "yfinance":
+                    df = _fetch_ohlcv_yfinance(
+                        symbol=symbol,
+                        provider=provider,
+                        start_date=start_date,
+                        end_date=end_date,
+                        interval=interval,
+                    )
+                elif stock_provider == "stooq" and interval not in INTRADAY_INTERVALS:
+                    df = _fetch_ohlcv_stooq(
+                        symbol=symbol,
+                        provider=provider,
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                else:
+                    continue
+            except Exception as exc:
+                logger.warning("%s fetch_ohlcv failed for %s: %s", stock_provider, symbol, exc)
+                df = pd.DataFrame()
+            if not df.empty:
+                source = stock_provider
+                break
     elif provider == "coingecko":
         try:
             df = _fetch_ohlcv_coingecko(symbol, start_date, end_date)
@@ -1549,10 +1660,11 @@ def fetch_ohlcv_with_meta(
             )
         except Exception as final_exc:
             logger.error("Stooq fallback failed for %s: %s", symbol, final_exc)
-            return pd.DataFrame(), _snapshot_meta("live", False, None)
+            return pd.DataFrame(), _snapshot_meta("unavailable", True, None)
 
     out = _normalize_ohlcv_frame(df, symbol)
-    as_of = _utc_now() if not out.empty else None
+    as_of = pd.to_datetime(out["time"].iloc[-1], utc=True).to_pydatetime() if not out.empty else None
+    source_class, stale = _classify_ohlcv_semantics(asset_type, source, interval)
     logger.info(
         "OHLCV fetch result symbol=%s provider=%s source=%s rows=%d elapsed_ms=%d",
         symbol.upper(),
@@ -1561,7 +1673,7 @@ def fetch_ohlcv_with_meta(
         len(out),
         _elapsed_ms(started),
     )
-    meta = _snapshot_meta("live", False, as_of)
+    meta = _snapshot_meta(source_class, stale, as_of)
     meta["provider"] = provider
     meta["fetch_source"] = source
     meta["asset_type"] = asset_type
@@ -1584,8 +1696,131 @@ def fetch_ohlcv(
     return out
 
 
-def fetch_fundamentals(symbol: str) -> pd.DataFrame:
-    """Fetch stock fundamentals (PE/PB/ROE and core metrics).
+def _to_akshare_financial_symbol(symbol: str) -> str:
+    """Map unified CN symbol format to AKShare's exchange-prefixed contract."""
+    source_symbol = symbol.upper().strip()
+    code = source_symbol.split(".")[0]
+    if source_symbol.endswith(".SZ"):
+        return f"sz{code}"
+    if source_symbol.endswith(".SH"):
+        return f"sh{code}"
+    if source_symbol.endswith(".BJ"):
+        return f"bj{code}"
+    if code.isdigit() and len(code) == 6:
+        prefix = "sh" if code.startswith(("5", "6", "9")) else "sz"
+        return f"{prefix}{code}"
+    return code
+
+
+def _normalize_report_date(value: object) -> str | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, (datetime, pd.Timestamp)):
+        return pd.Timestamp(value).strftime("%Y-%m-%d")
+    text = re.sub(r"[^0-9]", "", str(value))
+    if len(text) >= 8:
+        return f"{text[:4]}-{text[4:6]}-{text[6:8]}"
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.isna(parsed):
+        return None
+    return parsed.strftime("%Y-%m-%d")
+
+
+def _classify_report_period(report_date: object) -> str | None:
+    normalized = _normalize_report_date(report_date)
+    if not normalized:
+        return None
+    ts = pd.Timestamp(normalized)
+    if ts.month == 12 and ts.day == 31:
+        return "annual"
+    return {
+        3: "Q1",
+        6: "Q2",
+        9: "Q3",
+        12: "Q4",
+    }.get(ts.month, "quarterly")
+
+
+def _reshape_akshare_financial_report(
+    frame: pd.DataFrame,
+    *,
+    symbol: str,
+    period: Literal["annual", "quarterly"],
+) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+
+    working = frame.copy()
+    first_col = str(working.columns[0])
+    working = working.rename(
+        columns={
+            first_col: "report_date",
+            "公告日期": "announcement_date",
+            "更新日期": "updated_at",
+            "数据源": "data_source",
+            "币种": "currency",
+            "类型": "report_scope",
+            "是否审计": "audited",
+        }
+    )
+    working["report_date"] = working["report_date"].map(_normalize_report_date)
+    working = working[working["report_date"].notna()].copy()
+    if working.empty:
+        return working
+
+    working["report_period"] = working["report_date"].map(_classify_report_period)
+    if "announcement_date" in working.columns:
+        working["announcement_date"] = working["announcement_date"].map(_normalize_report_date)
+
+    if period == "annual":
+        working = working[working["report_period"] == "annual"].copy()
+    else:
+        working = working[working["report_period"].isin(["Q1", "Q2", "Q3", "Q4"])].copy()
+
+    if working.empty:
+        return working
+
+    working["symbol"] = symbol.upper()
+    preferred = ["report_date", "report_period", "announcement_date"]
+    ordered = [column for column in preferred if column in working.columns]
+    ordered.extend(column for column in working.columns if column not in ordered and column != "symbol")
+    ordered.append("symbol")
+    return working.loc[:, ordered].sort_values("report_date", ascending=False).reset_index(drop=True)
+
+
+def _reshape_yfinance_statement(
+    frame: pd.DataFrame | None,
+    *,
+    symbol: str,
+    period: Literal["annual", "quarterly"],
+) -> pd.DataFrame:
+    if frame is None or frame.empty:
+        return pd.DataFrame()
+
+    working = frame.transpose().reset_index().rename(columns={"index": "report_date"})
+    working["report_date"] = working["report_date"].map(_normalize_report_date)
+    working = working[working["report_date"].notna()].copy()
+    if working.empty:
+        return working
+
+    working["report_period"] = "annual" if period == "annual" else working["report_date"].map(_classify_report_period)
+    if period == "annual":
+        working["report_period"] = "annual"
+
+    working["symbol"] = symbol.upper()
+    preferred = ["report_date", "report_period"]
+    ordered = [column for column in preferred if column in working.columns]
+    ordered.extend(column for column in working.columns if column not in ordered and column != "symbol")
+    ordered.append("symbol")
+    return working.loc[:, ordered].sort_values("report_date", ascending=False).reset_index(drop=True)
+
+
+def fetch_fundamentals(
+    symbol: str,
+    report_type: Literal["income", "balance", "cashflow"] = "income",
+    period: Literal["annual", "quarterly"] = "annual",
+) -> pd.DataFrame:
+    """Fetch stock financial statements with report-type and period semantics.
 
     Notes:
         This function is stock-only. Callers should avoid invoking it for crypto symbols.
@@ -1595,7 +1830,32 @@ def fetch_fundamentals(symbol: str) -> pd.DataFrame:
 
     if provider == "akshare" and ak is not None:
         try:
+            statement_map = {
+                "income": "利润表",
+                "balance": "资产负债表",
+                "cashflow": "现金流量表",
+            }
+            report_df = ak.stock_financial_report_sina(
+                stock=_to_akshare_financial_symbol(symbol),
+                symbol=statement_map[report_type],
+            )
+            normalized_report = _reshape_akshare_financial_report(report_df, symbol=symbol, period=period)
+            if not normalized_report.empty:
+                return normalized_report
+        except Exception as exc:
+            logger.warning(
+                "AKShare financial report fetch failed for %s report_type=%s period=%s: %s",
+                symbol,
+                report_type,
+                period,
+                exc,
+            )
+
+        try:
+            indicator = "按年度" if period == "annual" else "按单季度"
             abstract_df = ak.stock_financial_abstract_ths(symbol=normalized.split(".")[0])
+            if indicator != "按报告期":
+                abstract_df = ak.stock_financial_abstract_ths(symbol=normalized.split(".")[0], indicator=indicator)
             info_df = ak.stock_individual_info_em(symbol=normalized.split(".")[0])
             info_map = {}
             if not info_df.empty:
@@ -1615,16 +1875,23 @@ def fetch_fundamentals(symbol: str) -> pd.DataFrame:
                     }
                 ).copy()
                 renamed["symbol"] = symbol.upper()
+                renamed["report_date"] = renamed["report_date"].map(_normalize_report_date)
                 renamed["name"] = info_map.get("股票简称", symbol.upper())
                 renamed["market_cap"] = info_map.get("总市值")
                 renamed["pe_ttm"] = info_map.get("市盈率(动态)") or info_map.get("市盈率-动态")
                 renamed["pb"] = info_map.get("市净率")
-                renamed["report_period"] = "annual"
-                return renamed.reset_index(drop=True)
+                renamed["report_period"] = (
+                    "annual" if period == "annual" else renamed["report_date"].map(_classify_report_period).fillna("quarterly")
+                )
+                if period == "annual":
+                    renamed = renamed[renamed["report_period"] == "annual"]
+                else:
+                    renamed = renamed[renamed["report_period"] != "annual"]
+                if not renamed.empty:
+                    return renamed.reset_index(drop=True)
         except Exception as exc:
-            logger.warning("AKShare fetch_fundamentals failed for %s: %s", symbol, exc)
+            logger.warning("AKShare abstract fallback failed for %s report_type=%s period=%s: %s", symbol, report_type, period, exc)
 
-    # Minimal fallback using yfinance metadata fields.
     try:
         import yfinance as yf
 
@@ -1640,8 +1907,24 @@ def fetch_fundamentals(symbol: str) -> pd.DataFrame:
             elif source_symbol.isdigit() and len(source_symbol) == 6:
                 yf_symbol = f"{source_symbol}.SS" if source_symbol.startswith(("5", "6", "9")) else f"{source_symbol}.SZ"
 
-        info = yf.Ticker(yf_symbol).info
+        ticker = yf.Ticker(yf_symbol)
+        statement_attr = {
+            ("income", "annual"): "income_stmt",
+            ("income", "quarterly"): "quarterly_income_stmt",
+            ("balance", "annual"): "balance_sheet",
+            ("balance", "quarterly"): "quarterly_balance_sheet",
+            ("cashflow", "annual"): "cashflow",
+            ("cashflow", "quarterly"): "quarterly_cashflow",
+        }[(report_type, period)]
+        statement_frame = getattr(ticker, statement_attr, None)
+        reshaped = _reshape_yfinance_statement(statement_frame, symbol=source_symbol, period=period)
+        if not reshaped.empty:
+            return reshaped
+
+        info = ticker.info
         row = {
+            "report_date": None,
+            "report_period": period,
             "symbol": source_symbol,
             "name": info.get("shortName") or info.get("longName") or source_symbol,
             "pe_ttm": info.get("trailingPE"),
@@ -1652,7 +1935,7 @@ def fetch_fundamentals(symbol: str) -> pd.DataFrame:
         }
         return pd.DataFrame([row])
     except Exception as exc:
-        logger.error("Fallback fetch_fundamentals failed for %s: %s", symbol, exc)
+        logger.error("Fallback fetch_fundamentals failed for %s report_type=%s period=%s: %s", symbol, report_type, period, exc)
         return pd.DataFrame()
 
 
