@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE_URL="${BASE_URL:-http://127.0.0.1}"
+SKIP_FRONTEND_VALIDATION="${SKIP_FRONTEND_VALIDATION:-0}"
 CORE_SERVICES=(db redis backend celery_worker celery_beat frontend nginx)
 BACKEND_TESTS=(
   "tests/test_realtime_defaults.py"
@@ -61,10 +62,14 @@ if run_compose ps >/dev/null 2>&1; then
   echo "[5/7] Run backend regression in container"
   run_compose exec -T backend pytest -q "${BACKEND_TESTS[@]}"
 
-  echo "[6/7] Run frontend tests/build/performance locally"
-  (cd frontend && npm test)
-  (cd frontend && npm run build)
-  (cd frontend && npm run check:performance)
+  if [[ "$SKIP_FRONTEND_VALIDATION" == "1" ]]; then
+    echo "[6/7] Skip frontend tests/build/performance because a separate CI frontend job already validated them"
+  else
+    echo "[6/7] Run frontend tests/build/performance locally"
+    (cd frontend && npm test)
+    (cd frontend && npm run build)
+    (cd frontend && npm run check:performance)
+  fi
 
   echo "[7/7] Run runtime smoke scripts"
   BASE_URL="$BASE_URL" bash scripts/smoke_frontend_routes.sh
@@ -75,12 +80,17 @@ else
   echo "[4/7] Run backend regression locally"
   python3 -m pytest -q "${BACKEND_TESTS[@]/#/backend/}"
 
-  echo "[5/7] Run frontend tests/build locally"
-  (cd frontend && npm test)
-  (cd frontend && npm run build)
+  if [[ "$SKIP_FRONTEND_VALIDATION" == "1" ]]; then
+    echo "[5/7] Skip frontend tests/build locally because a separate CI frontend job already validated them"
+    echo "[6/7] Skip frontend performance gate locally because a separate CI frontend job already validated them"
+  else
+    echo "[5/7] Run frontend tests/build locally"
+    (cd frontend && npm test)
+    (cd frontend && npm run build)
 
-  echo "[6/7] Run frontend performance gate locally"
-  (cd frontend && npm run check:performance)
+    echo "[6/7] Run frontend performance gate locally"
+    (cd frontend && npm run check:performance)
+  fi
 
   echo "[7/7] Skip runtime smoke because Docker/stack access is unavailable in this shell"
 fi
